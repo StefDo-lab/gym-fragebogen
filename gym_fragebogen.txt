@@ -1,0 +1,799 @@
+
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mitglieder-Fragebogen - Anytime Fitness</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .hidden { display: none; }
+        .form-section {
+            border-left: 4px solid #667eea;
+            padding-left: 1rem;
+            margin-bottom: 2rem;
+        }
+        .medical-detail {
+            background-color: #f8f9ff;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        .error-message {
+            background-color: #fee2e2;
+            border: 1px solid #fca5a5;
+            color: #dc2626;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .success-message {
+            background-color: #d1fae5;
+            border: 1px solid #86efac;
+            color: #059669;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="gradient-bg text-white py-8">
+        <div class="container mx-auto px-4 text-center">
+            <img src="https://upload.wikimedia.org/wikipedia/commons/8/80/Anytime_Fitness_logo.png" 
+                 alt="Anytime Fitness Logo" 
+                 class="mx-auto mb-4 h-16 object-contain bg-white px-4 py-2 rounded">
+            <h1 class="text-4xl font-bold mb-2">
+                <i class="fas fa-clipboard-list mr-3"></i>Mitglieder-Fragebogen
+            </h1>
+            <p class="text-xl opacity-90">
+                Bitte fülle diesen Fragebogen ehrlich aus – deine Angaben helfen uns, dein Training sicher und effektiv zu gestalten.
+            </p>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <div id="error-container"></div>
+        <div id="success-container"></div>
+
+        <form id="memberForm" class="bg-white rounded-lg shadow-lg p-8">
+            <!-- Persönliche Daten -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-user text-blue-600 mr-3"></i>Persönliche Daten
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="vorname" class="block text-sm font-medium text-gray-700 mb-2">Vorname *</label>
+                        <input type="text" id="vorname" name="vorname" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="nachname" class="block text-sm font-medium text-gray-700 mb-2">Nachname *</label>
+                        <input type="text" id="nachname" name="nachname" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="geburtsdatum" class="block text-sm font-medium text-gray-700 mb-2">Geburtsdatum *</label>
+                        <input type="date" id="geburtsdatum" name="geburtsdatum" required 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="telefonnummer" class="block text-sm font-medium text-gray-700 mb-2">Telefonnummer *</label>
+                        <input type="tel" id="telefonnummer" name="telefonnummer" required 
+                               placeholder="+43 664 123 4567"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="beruf" class="block text-sm font-medium text-gray-700 mb-2">Beruf / Firma</label>
+                        <input type="text" id="beruf" name="beruf" 
+                               placeholder="z.B. Lehrer, IT-Consultant, Krankenschwester"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="erfassungsdatum" class="block text-sm font-medium text-gray-700 mb-2">Datum der Erfassung</label>
+                        <input type="date" id="erfassungsdatum" name="erfassungsdatum" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    
+                    <div>
+                        <label for="studio" class="block text-sm font-medium text-gray-700 mb-2">Studio *</label>
+                        <select id="studio" name="studio" required 
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">Bitte wählen...</option>
+                            <option value="St Georgen">St Georgen</option>
+                            <option value="Bad Ischl">Bad Ischl</option>
+                            <option value="Wels">Wels</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aufmerksamkeit -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-bullhorn text-blue-600 mr-3"></i>Wie bist du auf uns aufmerksam geworden?
+                </h2>
+                
+                <div class="space-y-3">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Zeitung" class="mr-3 text-blue-600">
+                        <span>Zeitung</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Fernsehen" class="mr-3 text-blue-600">
+                        <span>Fernsehen</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Folder" class="mr-3 text-blue-600">
+                        <span>Folder</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Freunde / Bekannte" class="mr-3 text-blue-600">
+                        <span>Freunde / Bekannte</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Internet" class="mr-3 text-blue-600">
+                        <span>Internet</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Facebook / Instagram" class="mr-3 text-blue-600">
+                        <span>Facebook / Instagram</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="aufmerksamkeit" value="Sonstiges" class="mr-3 text-blue-600" onchange="toggleSonstiges()">
+                        <span>Sonstiges:</span>
+                    </label>
+                    <div id="aufmerksamkeit_sonstiges_field" class="hidden ml-6">
+                        <input type="text" name="aufmerksamkeit_sonstiges" placeholder="Bitte spezifizieren..."
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Training -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-dumbbell text-blue-600 mr-3"></i>Hast du bereits Erfahrung mit Krafttraining?
+                </h2>
+                
+                <div class="space-y-3 mb-4">
+                    <label class="flex items-center">
+                        <input type="radio" name="krafttraining" value="Ja" class="mr-3 text-blue-600">
+                        <span>Ja</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="radio" name="krafttraining" value="Nein" class="mr-3 text-blue-600">
+                        <span>Nein</span>
+                    </label>
+                </div>
+                
+                <div class="mb-6">
+                    <label for="trainingswunsche" class="block text-sm font-medium text-gray-700 mb-2">
+                        Was möchtest du ergänzen (Trainingsform, Wünsche, Unsicherheiten)?
+                    </label>
+                    <input type="text" id="trainingswunsche" name="trainingswunsche" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+
+            <!-- Trainingsziele -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-target text-blue-600 mr-3"></i>Deine Trainingsziele (Mehrfachauswahl möglich)
+                </h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Rücken stärken" class="mr-3 text-blue-600">
+                        <span>Rücken stärken</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Gelenke stabilisieren" class="mr-3 text-blue-600">
+                        <span>Gelenke stabilisieren</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Osteoporoseprävention" class="mr-3 text-blue-600">
+                        <span>Osteoporoseprävention</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Stoffwechsel verbessern" class="mr-3 text-blue-600">
+                        <span>Stoffwechsel verbessern</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Haltung verbessern" class="mr-3 text-blue-600">
+                        <span>Haltung verbessern</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Gewebe straffen" class="mr-3 text-blue-600">
+                        <span>Gewebe straffen</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Gewicht reduzieren" class="mr-3 text-blue-600">
+                        <span>Gewicht reduzieren</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Muskelmasse aufbauen" class="mr-3 text-blue-600">
+                        <span>Muskelmasse aufbauen</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Vorbereitung auf Sport" class="mr-3 text-blue-600" onchange="toggleSportVorbereitung()">
+                        <span>Vorbereitung auf Sport</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Verletzungsprophylaxe" class="mr-3 text-blue-600">
+                        <span>Verletzungsprophylaxe</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Leistungssteigerung" class="mr-3 text-blue-600">
+                        <span>Leistungssteigerung</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" name="trainingsziele" value="Dysbalancen ausgleichen" class="mr-3 text-blue-600">
+                        <span>Dysbalancen ausgleichen</span>
+                    </label>
+                </div>
+                
+                <div id="sport_vorbereitung_field" class="hidden mt-4">
+                    <div class="medical-detail">
+                        <label for="sport_vorbereitung_details" class="block text-sm font-medium text-gray-700 mb-2">
+                            Welche Sportart? Welcher Wettkampf?
+                        </label>
+                        <input type="text" id="sport_vorbereitung_details" name="sport_vorbereitung_details" 
+                               placeholder="z.B. Fußball, Marathon, Triathlon..."
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Medizinische Fragen -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-stethoscope text-red-600 mr-3"></i>Medizinische Fragen
+                </h2>
+                
+                <!-- OP in den letzten 12-18 Monaten -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">1. OP in den letzten 12–18 Monaten?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="op_letzte_monate" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('op_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="op_letzte_monate" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('op_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="op_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="op_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Welche OP & wann?
+                            </label>
+                            <textarea id="op_details_text" name="op_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Ausstrahlende Schmerzen -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">2. Ausstrahlende Schmerzen?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="ausstrahlende_schmerzen" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('schmerzen_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="ausstrahlende_schmerzen" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('schmerzen_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="schmerzen_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="schmerzen_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Wo genau?
+                            </label>
+                            <textarea id="schmerzen_details_text" name="schmerzen_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bandscheibenvorfall -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">3. Bandscheibenvorfall in den letzten 6–12 Monaten?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="bandscheibenvorfall" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('bandscheibenvorfall_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="bandscheibenvorfall" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('bandscheibenvorfall_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="bandscheibenvorfall_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="bandscheibenvorfall_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Wann & wo?
+                            </label>
+                            <textarea id="bandscheibenvorfall_details_text" name="bandscheibenvorfall_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Osteoporose -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">4. Osteoporose?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="osteoporose" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('osteoporose_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="osteoporose" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('osteoporose_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="osteoporose_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="osteoporose_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Wann diagnostiziert? Behandlung?
+                            </label>
+                            <textarea id="osteoporose_details_text" name="osteoporose_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bluthochdruck -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">5. Bluthochdruck?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="bluthochdruck" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('bluthochdruck_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="bluthochdruck" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('bluthochdruck_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="bluthochdruck_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="bluthochdruck_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Werte? Medikamente?
+                            </label>
+                            <textarea id="bluthochdruck_details_text" name="bluthochdruck_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Innere Brüche -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">6. Innere Brüche?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="innere_brueche" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('innere_brueche_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="innere_brueche" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('innere_brueche_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="innere_brueche_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="innere_brueche_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Welche? Wann?
+                            </label>
+                            <textarea id="innere_brueche_details_text" name="innere_brueche_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Herzprobleme -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">7. Herzprobleme?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="herzprobleme" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('herzprobleme_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="herzprobleme" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('herzprobleme_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="herzprobleme_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="herzprobleme_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Art? Behandlung?
+                            </label>
+                            <textarea id="herzprobleme_details_text" name="herzprobleme_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Schlaganfall, Epilepsie -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-gray-800 mb-3">8. Schlaganfall, Epilepsie, o. Ä.?</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="schlaganfall_epilepsie" value="Ja" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('schlaganfall_epilepsie_details')">
+                            <span>Ja</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="schlaganfall_epilepsie" value="Nein" class="mr-3 text-blue-600" onchange="toggleMedicalDetail('schlaganfall_epilepsie_details')">
+                            <span>Nein</span>
+                        </label>
+                    </div>
+                    <div id="schlaganfall_epilepsie_details" class="hidden mt-3">
+                        <div class="medical-detail">
+                            <label for="schlaganfall_epilepsie_details_text" class="block text-sm font-medium text-gray-700 mb-2">
+                                Wann? Medikamente?
+                            </label>
+                            <textarea id="schlaganfall_epilepsie_details_text" name="schlaganfall_epilepsie_details_text" rows="2"
+                                      class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sonstige Gesundheitsprobleme -->
+                <div class="mb-6">
+                    <label for="sonstige_gesundheitsprobleme" class="block text-sm font-medium text-gray-700 mb-2">
+                        Sonstige Gesundheitsprobleme oder Medikamente?
+                    </label>
+                    <textarea id="sonstige_gesundheitsprobleme" name="sonstige_gesundheitsprobleme" rows="3"
+                              class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+            </div>
+
+            <!-- Offene Fragen -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-comments text-green-600 mr-3"></i>Offene Fragen
+                </h2>
+                
+                <div class="space-y-6">
+                    <div>
+                        <label for="konkrete_ziele" class="block text-sm font-medium text-gray-700 mb-2">
+                            Was sind deine konkreten Ziele beim Training?
+                        </label>
+                        <textarea id="konkrete_ziele" name="konkrete_ziele" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label for="gesundheitszustand" class="block text-sm font-medium text-gray-700 mb-2">
+                            Wie ist dein aktueller Gesundheitszustand?
+                        </label>
+                        <textarea id="gesundheitszustand" name="gesundheitszustand" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label for="bewegungseinschraenkungen" class="block text-sm font-medium text-gray-700 mb-2">
+                            Gibt es Einschränkungen bei Bewegung oder Sport?
+                        </label>
+                        <textarea id="bewegungseinschraenkungen" name="bewegungseinschraenkungen" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    
+                    <div>
+                        <label for="schmerzen_beschwerden" class="block text-sm font-medium text-gray-700 mb-2">
+                            Wo spürst du Schmerzen oder Beschwerden?
+                        </label>
+                        <textarea id="schmerzen_beschwerden" name="schmerzen_beschwerden" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="stresslevel" class="block text-sm font-medium text-gray-700 mb-2">
+                                Stresslevel (1 = kein Stress, 10 = extrem gestresst):
+                            </label>
+                            <select id="stresslevel" name="stresslevel" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Bitte wählen...</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="schlafdauer" class="block text-sm font-medium text-gray-700 mb-2">
+                                Durchschnittliche Schlafdauer (in Stunden):
+                            </label>
+                            <input type="number" id="schlafdauer" name="schlafdauer" min="0" max="12" step="0.5"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label for="ernaehrung" class="block text-sm font-medium text-gray-700 mb-2">
+                            Wie ernährst du dich aktuell?
+                        </label>
+                        <textarea id="ernaehrung" name="ernaehrung" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="motivationslevel" class="block text-sm font-medium text-gray-700 mb-2">
+                                Motivationslevel (1 = null, 10 = hoch):
+                            </label>
+                            <select id="motivationslevel" name="motivationslevel" 
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Bitte wählen...</option>
+                                <option value="1">1</option>
+                                <option value="2">2</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="6">6</option>
+                                <option value="7">7</option>
+                                <option value="8">8</option>
+                                <option value="9">9</option>
+                                <option value="10">10</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="trainingsfrequenz" class="block text-sm font-medium text-gray-700 mb-2">
+                                Wie oft möchtest du pro Woche trainieren?
+                            </label>
+                            <input type="number" id="trainingsfrequenz" name="trainingsfrequenz" min="1" max="7"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DSGVO Einwilligung -->
+            <div class="form-section">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-shield-alt text-green-600 mr-3"></i>DSGVO-Einwilligung
+                </h2>
+                
+                <div class="bg-gray-100 p-6 rounded-lg mb-6">
+                    <h3 class="font-semibold mb-4">Datenschutzerklärung</h3>
+                    <p class="text-sm text-gray-700 mb-4">
+                        Mit dem Absenden dieses Fragebogens willigen Sie ein, dass Ihre angegebenen Daten zum Zweck 
+                        der Trainingsplanung und -betreuung gespeichert und verarbeitet werden. Ihre Daten werden 
+                        ausschließlich für die Erstellung eines individuellen Trainingsplans und die medizinische 
+                        Betreuung während des Trainings verwendet.
+                    </p>
+                    <p class="text-sm text-gray-700 mb-4">
+                        Sie haben jederzeit das Recht auf Auskunft, Berichtigung, Löschung oder Einschränkung der 
+                        Verarbeitung Ihrer personenbezogenen Daten sowie das Recht auf Datenübertragbarkeit und 
+                        Widerspruch gegen die Verarbeitung.
+                    </p>
+                    <p class="text-sm text-gray-700">
+                        Diese Einwilligung können Sie jederzeit mit Wirkung für die Zukunft widerrufen.
+                    </p>
+                </div>
+                
+                <label class="flex items-start">
+                    <input type="checkbox" id="dsgvo_einwilligung" name="dsgvo_einwilligung" required 
+                           class="mr-3 mt-1 text-blue-600">
+                    <span class="text-sm">
+                        Ich stimme zu, dass meine Angaben zum Zweck der Trainingsplanung gespeichert und verarbeitet werden. 
+                        Ich kann diese Einwilligung jederzeit widerrufen. *
+                    </span>
+                </label>
+            </div>
+
+            <!-- Submit Button -->
+            <div class="text-center pt-6">
+                <button type="submit" id="submitBtn" 
+                        class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-4 rounded-lg text-lg font-semibold 
+                               hover:from-blue-700 hover:to-purple-700 transform hover:scale-105 transition-all duration-200 
+                               disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-paper-plane mr-3"></i>Fragebogen absenden
+                </button>
+            </div>
+        </form>
+
+        <div class="text-center mt-8 text-gray-600">
+            <p class="text-lg">
+                <i class="fas fa-heart text-red-500 mr-2"></i>
+                Danke für dein Vertrauen 💪 Wir freuen uns auf das gemeinsame Training!
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Seatable Konfiguration
+        const WEBHOOK_URL = 'https://hook.eu2.make.com/67n3am3mu1v9ok6ln4v0a02bcpwt9swz';
+
+        // Erfassungsdatum automatisch setzen
+        document.getElementById('erfassungsdatum').value = new Date().toISOString().split('T')[0];
+
+        // Toggle Funktionen für bedingte Felder
+        function toggleSonstiges() {
+            const checkbox = document.querySelector('input[name="aufmerksamkeit"][value="Sonstiges"]');
+            const field = document.getElementById('aufmerksamkeit_sonstiges_field');
+            field.classList.toggle('hidden', !checkbox.checked);
+        }
+
+        function toggleSportVorbereitung() {
+            const checkbox = document.querySelector('input[name="trainingsziele"][value="Vorbereitung auf Sport"]');
+            const field = document.getElementById('sport_vorbereitung_field');
+            field.classList.toggle('hidden', !checkbox.checked);
+        }
+
+        function toggleMedicalDetail(detailId) {
+            const radioYes = document.querySelector(`input[name="${detailId.replace('_details', '')}"]:checked`);
+            const detailField = document.getElementById(detailId);
+            
+            if (radioYes && radioYes.value === 'Ja') {
+                detailField.classList.remove('hidden');
+                detailField.querySelector('textarea, input').focus();
+            } else {
+                detailField.classList.add('hidden');
+                detailField.querySelector('textarea, input').value = '';
+            }
+        }
+
+        // Formular Daten sammeln
+        function collectFormData() {
+            const formData = new FormData(document.getElementById('memberForm'));
+            const data = {};
+
+            // Normale Felder
+            for (let [key, value] of formData.entries()) {
+                if (data[key]) {
+                    if (Array.isArray(data[key])) {
+                        data[key].push(value);
+                    } else {
+                        data[key] = [data[key], value];
+                    }
+                } else {
+                    data[key] = value;
+                }
+            }
+
+            // Spezielle Arrays für Mehrfachauswahl
+            const aufmerksamkeit = [];
+            const trainingsziele = [];
+            
+            document.querySelectorAll('input[name="aufmerksamkeit"]:checked').forEach(cb => {
+                aufmerksamkeit.push(cb.value);
+            });
+            
+            document.querySelectorAll('input[name="trainingsziele"]:checked').forEach(cb => {
+                trainingsziele.push(cb.value);
+            });
+
+            data.aufmerksamkeit = aufmerksamkeit.join(', ');
+            data.trainingsziele = trainingsziele.join(', ');
+
+            return data;
+        }
+
+        // Error/Success Messages
+        function showMessage(message, type = 'error') {
+            const container = document.getElementById(type === 'error' ? 'error-container' : 'success-container');
+            container.innerHTML = `
+                <div class="${type === 'error' ? 'error-message' : 'success-message'}">
+                    <i class="fas fa-${type === 'error' ? 'exclamation-triangle' : 'check-circle'} mr-2"></i>
+                    ${message}
+                </div>
+            `;
+            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        function clearMessages() {
+            document.getElementById('error-container').innerHTML = '';
+            document.getElementById('success-container').innerHTML = '';
+        }
+
+        // Form Submission
+        document.getElementById('memberForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            clearMessages();
+
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.innerHTML;
+            
+            // Button deaktivieren
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-3"></i>Wird gesendet...';
+
+            try {
+                // DSGVO Validierung
+                if (!document.getElementById('dsgvo_einwilligung').checked) {
+                    throw new Error('Bitte stimmen Sie der DSGVO-Einwilligung zu, um fortzufahren.');
+                }
+
+                // Daten sammeln
+                const data = collectFormData();
+                console.log('Sending data:', data);
+
+                // An Make.com Webhook senden
+                const response = await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                // Erfolg
+                showMessage(
+                    'Vielen Dank! Ihr Fragebogen wurde erfolgreich übermittelt. Wir werden uns in Kürze bei Ihnen melden.',
+                    'success'
+                );
+                
+                // Formular zurücksetzen
+                document.getElementById('memberForm').reset();
+                document.getElementById('erfassungsdatum').value = new Date().toISOString().split('T')[0];
+                
+                // Versteckte Felder ausblenden
+                document.querySelectorAll('.hidden').forEach(el => el.classList.add('hidden'));
+
+            } catch (error) {
+                console.error('Error:', error);
+                showMessage(
+                    'Verbindung fehlgeschlagen. Bitte versuche es erneut oder kontaktiere uns.',
+                    'error'
+                );
+            } finally {
+                // Button wieder aktivieren
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        });
+
+        // DSGVO Checkbox Validierung
+        document.getElementById('dsgvo_einwilligung').addEventListener('change', function() {
+            const submitBtn = document.getElementById('submitBtn');
+            if (this.checked) {
+                submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else {
+                submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            }
+        });
+    </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015" integrity="sha512-ZpsOmlRQV6y907TI0dKBHq9Md29nnaEIPlkf84rnaERnq6zvWvPUqr2ft8M1aS28oN72PdrCzSjY4U6VaAw1EQ==" data-cf-beacon='{"rayId":"95657861db843ec1","serverTiming":{"name":{"cfExtPri":true,"cfEdge":true,"cfOrigin":true,"cfL4":true,"cfSpeedBrain":true,"cfCacheStatus":true}},"version":"2025.6.2","token":"4edd5f8ec12a48cfa682ab8261b80a79"}' crossorigin="anonymous"></script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDkU7pUwofy9oM4wfYaRcPX6qMwuTT0R%2FQzWL3VLCzpTDz9R%2BKVJcr%2BA63hM9i%2BkAp%2BCp0D3P%2BzW3ZcWSrPyDsolIv9umSBnVMgw5cgA5n0P8wcm%2FH65%2FxasKY4iXY%2BI%2FjYHJoQ%2B3vOOO%2B9Ge4KOQ75wuaPWKrZe9HJAB1DZlfdNjUZp9gDzGrfMfJXCO4kHyzehXn%2Ft6Hlu4R12QFKC1whPacL%2Ft1OY%2Fbbu2Nrh5SqGafhvxErSg4%2FqYD5hoDloey%2FqQamMqgwyEIxVwVJnAn3T3DgNfrpYHmlmtBvEv%2Bsc3M7QelrbC0%2Bv%2B5ZZ65pFbln%2Fm8ynbghop8O0VFdYzC3HGkF9YuRU%2B8gzxgxLE6TfBoTG%2FUxbvmcZ%2FOpOpVnNC62LyDp3LLz5iOBIorv%2FRzR0QNA7ojKUaKNYo%2BDLOb3teIJxIIPi9INxaUqB6OmFUgRbOUalBqbeZLgQyX9Rfw7w87hDgMLgktLcOje9aAP029guY6mu8DJzKTRstNfP0sberBqIHoGVXIRnoYBdrs1ngZQUgMiXCKKbKd3YHEW1a";
+        window.__genspark_locale = "de-DE";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDkU7pUwofy9oM4wfYaRcPX6qMwuTT0R/QzWL3VLCzpTDz9R+KVJcr+A63hM9i+kAp+Cp0D3P+zW3ZcWSrPyDsolIv9umSBnVMgw5cgA5n0P8wcm/H65/xasKY4iXY+I/jYHJoQ+3vOOO+9Ge4KOQ75wuaPWKrZe9HJAB1DZlfdNjUZp9gDzGrfMfJXCO4kHyzehXn/t6Hlu4R12QFKC1whPacL/t1OY/bbu2Nrh5SqGafhvxErSg4/qYD5hoDloey/qQamMqgwyEIxVwVJnAn3T3DgNfrpYHmlmtBvEv+sc3M7QelrbC0+v+5ZZ65pFbln/m8ynbghop8O0VFdYzC3HGkF9YuRU+8gzxgxLE6TfBoTG/UxbvmcZ/OpOpVnNC62LyDp3LLz5iOBIorv/RzR0QNA7ojKUaKNYo+DLOb3teIJxIIPi9INxaUqB6OmFUgRbOUalBqbeZLgQyX9Rfw7w87hDgMLgktLcOje9aAP029guY6mu8DJzKTRstNfP0sberBqIHoGVXIRnoYBdrs1ngZQUgMiXCKKbKd3YHEW1a";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    

@@ -1,0 +1,7 @@
+Datum,Workout-Name,Übung,Satz-Nr,Gewicht (kg),Wdh,Einheit,Typ,User-ID,Name,Kommentar,Erledigt
+2025-07-04,Push,Bankdrücken,1,100,10,Wdh,Maschine,MJ49-K3BQ,Stefan,"Letzter Satz schwer",FALSE
+2025-07-04,Push,Bankdrücken,2,90,12,Wdh,Maschine,MJ49-K3BQ,Stefan,,
+2025-07-04,Pull,Rudern,1,70,10,Wdh,Maschine,MJ49-K3BQ,Stefan,,
+2025-07-04,Pull,Klimmzüge,1,0,8,Wdh,Eigengewicht,MJ49-K3BQ,Stefan,,
+2025-07-04,Beine,Kniebeuge,1,120,8,Wdh,Maschine,MJ49-K3BQ,Stefan,,
+2025-07-04,Beine,Beinstrecker,1,50,15,Wdh,Maschine,MJ49-K3BQ,Stefan,,

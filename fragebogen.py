@@ -32,9 +32,13 @@ with st.form("fitness_fragebogen"):
     studio = st.selectbox("Studio *", ["Bitte wählen...", "Studio 1", "Studio 2"])
 
     st.subheader("Körperdaten (optional)")
-    groesse = st.number_input("Größe (cm)", min_value=0, step=1)
-    gewicht = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1)
-    kfa = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1)
+    groesse = st.number_input("Größe (cm)", min_value=0, step=1, format="%d", placeholder="optional")
+    gewicht = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1, format="%.1f", placeholder="optional")
+    kfa = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1, format="%.1f", value=None, placeholder="optional")
+    if kfa is None:
+        kfa_out = ""
+    else:
+        kfa_out = kfa
     st.caption("Hinweis: Diese Angaben sind freiwillig und helfen uns bei der individuellen Trainingsplanung. Falls du diese Werte nicht kennst, können wir sie gerne bei deinem ersten Termin gemeinsam ermitteln.")
 
     st.subheader("Sonstiges")
@@ -55,6 +59,7 @@ with st.form("fitness_fragebogen"):
             ziel_details[ziel] = st.text_area(f"Bitte beschreibe dein Ziel '{ziel}' genauer:")
 
     st.subheader("Medizinische Fragen")
+
     op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
     op_details = ""
     if op == "Ja":
@@ -103,10 +108,10 @@ with st.form("fitness_fragebogen"):
     einschraenkungen = st.text_area("Gibt es Einschränkungen bei Bewegung oder Sport?")
     schmerzen_beschwerden = st.text_area("Wo spürst du Schmerzen oder Beschwerden?")
     stresslevel = st.slider("Stresslevel (1 = kein Stress, 10 = extrem gestresst):", 1, 10, 1)
-    schlaf = st.number_input("Durchschnittliche Schlafdauer (in Stunden):", min_value=0.0, step=0.5)
+    schlaf = st.number_input("Durchschnittliche Schlafdauer (in Stunden):", min_value=0.0, step=0.5, format="%.1f", placeholder="optional")
     ernaehrung = st.text_area("Wie ernährst du dich aktuell?")
     motivation = st.slider("Motivationslevel (1 = null, 10 = hoch):", 1, 10, 5)
-    training_haeufigkeit = st.number_input("Wie oft möchtest du pro Woche trainieren?", min_value=0, step=1)
+    training_haeufigkeit = st.number_input("Wie oft möchtest du pro Woche trainieren?", min_value=0, step=1, format="%d", placeholder="optional")
 
     st.subheader("DSGVO-Einwilligung")
     st.caption("Mit dem Absenden dieses Fragebogens willigen Sie ein, dass Ihre angegebenen Daten zum Zweck der Trainingsplanung und -betreuung gespeichert und verarbeitet werden. Ihre Daten werden ausschließlich für die Erstellung eines individuellen Trainingsplans und die medizinische Betreuung während des Trainings verwendet. Sie haben jederzeit das Recht auf Auskunft, Berichtigung, Löschung oder Einschränkung der Verarbeitung Ihrer personenbezogenen Daten sowie das Recht auf Datenübertragbarkeit und Widerspruch gegen die Verarbeitung. Diese Einwilligung können Sie jederzeit mit Wirkung für die Zukunft widerrufen.")
@@ -119,10 +124,9 @@ if abgeschickt:
     if not (vorname and nachname and geburtsdatum and email and telefon and studio != "Bitte wählen..." and einwilligung):
         st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
     else:
-        # Reihenfolge wie in deiner CSV/Sheet
         new_row = [
             vorname, nachname, str(geburtsdatum), email, telefon, geschlecht,
-            str(erfassungsdatum), studio, groesse, gewicht, kfa, krafttraining,
+            str(erfassungsdatum), studio, groesse, gewicht, kfa_out, krafttraining,
             ergaenzung, "; ".join(ziele), str(ziel_details), op, op_details,
             schmerzen, schmerzen_details, bandscheibe, bandscheibe_details,
             osteoporose, osteoporose_details, bluthochdruck, bluthochdruck_details,

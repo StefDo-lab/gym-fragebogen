@@ -20,6 +20,7 @@ sheet = get_gsheet_worksheet()
 
 st.title("Fitness- und Gesundheitsfragebogen")
 
+# --- Formular-Start ---
 with st.form("fitness_fragebogen"):
     st.header("Persönliche Daten")
     vorname = st.text_input("Vorname *")
@@ -35,10 +36,7 @@ with st.form("fitness_fragebogen"):
     groesse = st.number_input("Größe (cm)", min_value=0, step=1, format="%d", placeholder="optional")
     gewicht = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1, format="%.1f", placeholder="optional")
     kfa = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1, format="%.1f", value=None, placeholder="optional")
-    if kfa is None:
-        kfa_out = ""
-    else:
-        kfa_out = kfa
+    kfa_out = "" if kfa is None else kfa
     st.caption("Hinweis: Diese Angaben sind freiwillig und helfen uns bei der individuellen Trainingsplanung. Falls du diese Werte nicht kennst, können wir sie gerne bei deinem ersten Termin gemeinsam ermitteln.")
 
     st.subheader("Sonstiges")
@@ -49,8 +47,7 @@ with st.form("fitness_fragebogen"):
         "Haltung verbessern", "Gewebe straffen", "Gewicht reduzieren", "Muskelmasse aufbauen",
         "Vorbereitung auf Sport", "Verletzungsprophylaxe", "Leistungssteigerung", "Dysbalancen ausgleichen"
     ])
-
-    # Dynamische Zusatzfelder für Ziele
+    # Dynamische Zusatzfelder für ausgewählte Ziele
     ziel_details = {}
     for ziel in ziele:
         if ziel in [
@@ -59,46 +56,30 @@ with st.form("fitness_fragebogen"):
             ziel_details[ziel] = st.text_area(f"Bitte beschreibe dein Ziel '{ziel}' genauer:")
 
     st.subheader("Medizinische Fragen")
-
+    # Dynamische Zusatzfelder bei jedem "Ja"
     op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-    op_details = ""
-    if op == "Ja":
-        op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):")
+    op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):") if op == "Ja" else ""
 
     schmerzen = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
-    schmerzen_details = ""
-    if schmerzen == "Ja":
-        schmerzen_details = st.text_area("Wo und wie äußern sich die Schmerzen?")
+    schmerzen_details = st.text_area("Wo und wie äußern sich die Schmerzen?") if schmerzen == "Ja" else ""
 
     bandscheibe = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
-    bandscheibe_details = ""
-    if bandscheibe == "Ja":
-        bandscheibe_details = st.text_area("Bitte beschreibe den Bandscheibenvorfall:")
+    bandscheibe_details = st.text_area("Bitte beschreibe den Bandscheibenvorfall:") if bandscheibe == "Ja" else ""
 
     osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
-    osteoporose_details = ""
-    if osteoporose == "Ja":
-        osteoporose_details = st.text_area("Bitte beschreibe die Osteoporose:")
+    osteoporose_details = st.text_area("Bitte beschreibe die Osteoporose:") if osteoporose == "Ja" else ""
 
     bluthochdruck = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
-    bluthochdruck_details = ""
-    if bluthochdruck == "Ja":
-        bluthochdruck_details = st.text_area("Bitte beschreibe den Bluthochdruck:")
+    bluthochdruck_details = st.text_area("Bitte beschreibe den Bluthochdruck:") if bluthochdruck == "Ja" else ""
 
     brueche = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
-    brueche_details = ""
-    if brueche == "Ja":
-        brueche_details = st.text_area("Bitte beschreibe die Brüche:")
+    brueche_details = st.text_area("Bitte beschreibe die Brüche:") if brueche == "Ja" else ""
 
     herz = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
-    herz_details = ""
-    if herz == "Ja":
-        herz_details = st.text_area("Bitte beschreibe die Herzprobleme:")
+    herz_details = st.text_area("Bitte beschreibe die Herzprobleme:") if herz == "Ja" else ""
 
     schlaganfall = st.radio("8. Schlaganfall, Epilepsie, o. Ä.?", ["Nein", "Ja"])
-    schlaganfall_details = ""
-    if schlaganfall == "Ja":
-        schlaganfall_details = st.text_area("Bitte beschreibe die Erkrankung:")
+    schlaganfall_details = st.text_area("Bitte beschreibe die Erkrankung:") if schlaganfall == "Ja" else ""
 
     gesundheit = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
 
@@ -119,8 +100,8 @@ with st.form("fitness_fragebogen"):
 
     abgeschickt = st.form_submit_button("Fragebogen absenden")
 
+# --- Nach dem Absenden ---
 if abgeschickt:
-    # Pflichtfelder prüfen
     if not (vorname and nachname and geburtsdatum and email and telefon and studio != "Bitte wählen..." and einwilligung):
         st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
     else:

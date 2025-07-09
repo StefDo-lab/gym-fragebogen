@@ -20,45 +20,6 @@ sheet = get_gsheet_worksheet()
 
 st.title("Fitness- und Gesundheitsfragebogen")
 
-# --- Dynamische Felder für Trainingsziele ---
-ziele = st.multiselect("Deine Trainingsziele (Mehrfachauswahl möglich)", [
-    "Rücken stärken", "Gelenke stabilisieren", "Osteoporoseprävention", "Stoffwechsel verbessern",
-    "Haltung verbessern", "Gewebe straffen", "Gewicht reduzieren", "Muskelmasse aufbauen",
-    "Vorbereitung auf Sport", "Verletzungsprophylaxe", "Leistungssteigerung", "Dysbalancen ausgleichen"
-])
-ziel_details = {}
-for ziel in ziele:
-    if ziel in ["Haltung verbessern", "Rücken stärken", "Gelenke stabilisieren", "Dysbalancen ausgleichen"]:
-        ziel_details[ziel] = st.text_area(f"Bitte beschreibe dein Ziel '{ziel}' genauer:")
-
-# --- Dynamische Felder für medizinische Fragen ---
-st.subheader("Medizinische Fragen")
-
-op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):") if op == "Ja" else ""
-
-schmerzen = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
-schmerzen_details = st.text_area("Wo und wie äußern sich die Schmerzen?") if schmerzen == "Ja" else ""
-
-bandscheibe = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
-bandscheibe_details = st.text_area("Bitte beschreibe den Bandscheibenvorfall:") if bandscheibe == "Ja" else ""
-
-osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
-osteoporose_details = st.text_area("Bitte beschreibe die Osteoporose:") if osteoporose == "Ja" else ""
-
-bluthochdruck = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
-bluthochdruck_details = st.text_area("Bitte beschreibe den Bluthochdruck:") if bluthochdruck == "Ja" else ""
-
-brueche = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
-brueche_details = st.text_area("Bitte beschreibe die Brüche:") if brueche == "Ja" else ""
-
-herz = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
-herz_details = st.text_area("Bitte beschreibe die Herzprobleme:") if herz == "Ja" else ""
-
-schlaganfall = st.radio("8. Schlaganfall, Epilepsie, o. Ä.?", ["Nein", "Ja"])
-schlaganfall_details = st.text_area("Bitte beschreibe die Erkrankung:") if schlaganfall == "Ja" else ""
-
-# --- Restliche Felder im Formular ---
 with st.form("fitness_fragebogen"):
     st.header("Persönliche Daten")
     vorname = st.text_input("Vorname *")
@@ -77,8 +38,42 @@ with st.form("fitness_fragebogen"):
     kfa_out = "" if kfa is None else kfa
     st.caption("Hinweis: Diese Angaben sind freiwillig und helfen uns bei der individuellen Trainingsplanung. Falls du diese Werte nicht kennst, können wir sie gerne bei deinem ersten Termin gemeinsam ermitteln.")
 
+    st.subheader("Sonstiges")
     krafttraining = st.radio("Hast du bereits Erfahrung mit Krafttraining?", ["Ja", "Nein"])
     ergaenzung = st.text_area("Was möchtest du ergänzen (Trainingsform, Wünsche, Unsicherheiten)?")
+
+    ziele = st.multiselect("Deine Trainingsziele (Mehrfachauswahl möglich)", [
+        "Rücken stärken", "Gelenke stabilisieren", "Osteoporoseprävention", "Stoffwechsel verbessern",
+        "Haltung verbessern", "Gewebe straffen", "Gewicht reduzieren", "Muskelmasse aufbauen",
+        "Vorbereitung auf Sport", "Verletzungsprophylaxe", "Leistungssteigerung", "Dysbalancen ausgleichen"
+    ])
+    weitere_ziele = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
+
+    # Medizinische Fragen und alles danach bleiben unverändert
+    st.subheader("Medizinische Fragen")
+    op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
+    op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):") if op == "Ja" else ""
+
+    schmerzen = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
+    schmerzen_details = st.text_area("Wo und wie äußern sich die Schmerzen?") if schmerzen == "Ja" else ""
+
+    bandscheibe = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
+    bandscheibe_details = st.text_area("Bitte beschreibe den Bandscheibenvorfall:") if bandscheibe == "Ja" else ""
+
+    osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
+    osteoporose_details = st.text_area("Bitte beschreibe die Osteoporose:") if osteoporose == "Ja" else ""
+
+    bluthochdruck = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
+    bluthochdruck_details = st.text_area("Bitte beschreibe den Bluthochdruck:") if bluthochdruck == "Ja" else ""
+
+    brueche = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
+    brueche_details = st.text_area("Bitte beschreibe die Brüche:") if brueche == "Ja" else ""
+
+    herz = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
+    herz_details = st.text_area("Bitte beschreibe die Herzprobleme:") if herz == "Ja" else ""
+
+    schlaganfall = st.radio("8. Schlaganfall, Epilepsie, o. Ä.?", ["Nein", "Ja"])
+    schlaganfall_details = st.text_area("Bitte beschreibe die Erkrankung:") if schlaganfall == "Ja" else ""
 
     gesundheit = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
     konkrete_ziele = st.text_area("Was sind deine konkreten Ziele beim Training?")
@@ -97,7 +92,6 @@ with st.form("fitness_fragebogen"):
 
     abgeschickt = st.form_submit_button("Fragebogen absenden")
 
-# --- Nach dem Absenden ---
 if abgeschickt:
     if not (vorname and nachname and geburtsdatum and email and telefon and studio != "Bitte wählen..." and einwilligung):
         st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
@@ -105,7 +99,7 @@ if abgeschickt:
         new_row = [
             vorname, nachname, str(geburtsdatum), email, telefon, geschlecht,
             str(erfassungsdatum), studio, groesse, gewicht, kfa_out, krafttraining,
-            ergaenzung, "; ".join(ziele), str(ziel_details), op, op_details,
+            ergaenzung, "; ".join(ziele), weitere_ziele, op, op_details,
             schmerzen, schmerzen_details, bandscheibe, bandscheibe_details,
             osteoporose, osteoporose_details, bluthochdruck, bluthochdruck_details,
             brueche, brueche_details, herz, herz_details, schlaganfall, schlaganfall_details,

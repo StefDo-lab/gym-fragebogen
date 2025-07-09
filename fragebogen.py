@@ -49,8 +49,8 @@ with st.form("fitness_fragebogen"):
     ])
     weitere_ziele = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
-    # Medizinische Fragen und alles danach bleiben unverändert
     st.subheader("Medizinische Fragen")
+
     op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
     op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):") if op == "Ja" else ""
 

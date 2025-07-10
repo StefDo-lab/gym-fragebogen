@@ -30,11 +30,12 @@ with st.form("fitness_fragebogen"):
     vorname = st.text_input("Vorname *")
     nachname = st.text_input("Nachname *")
     geburtsdatum = st.date_input(
-        "Geburtsdatum *",
-        min_value=datetime.date(1900, 1, 1),       # frühestes Datum
-        max_value=datetime.date.today(),           # spätestes Datum
-        value=datetime.date(2000, 1, 1)            # initial angezeigtes Datum
+    "Geburtsdatum *",
+    value     = datetime.date(2000, 1, 1),     # Standard-Startwert
+    min_value = datetime.date(1900, 1, 1),     # frühestes Datum
+    max_value = datetime.date.today(),         # spätestes Datum
     )
+
     email = st.text_input("E-Mail-Adresse *")
     telefon = st.text_input("Telefonnummer *")
     geschlecht = st.selectbox(

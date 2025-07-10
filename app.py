@@ -50,6 +50,9 @@ ws = worksheets['tracker']
 updated_ws = worksheets['updated']
 
 # ---- OpenAI Setup ----
+# Debug: Anzeige der verfügbaren Secrets
+st.write("🔒 st.secrets keys:", list(st.secrets.keys()))
+st.write("🔒 st.secrets content:", st.secrets)
 # Versuche sowohl Top-Level key als auch nested key
 openai_key = st.secrets.get("openai_api_key") or (st.secrets.get("openai") or {}).get("api_key")
 openai.api_key = openai_key

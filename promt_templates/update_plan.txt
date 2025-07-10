@@ -1,0 +1,22 @@
+# temperature: 0.8
+# max_tokens: 1500
+
+Nutze folgende Informationen, um einen neuen Trainingsplan zu erstellen:
+
+**Fragebogen-Daten:**
+- Name: ${Vorname} ${Nachname}
+- Alter: ${Geburtsdatum}
+- Einschränkungen: ${Einschränkungen}
+- Ziele: ${Ziele}
+
+**Bisherige Workouts** (chronologisch):
+${workout_list}
+
+**Zusätzliche Wünsche/Ziele**:
+${additional_goals}
+
+Bitte gib deine Antwort ausschließlich als gültiges JSON zurück, z. B.:
+{
+  "Wochenplan": [ ... ],
+  "Hinweise": "..."
+}

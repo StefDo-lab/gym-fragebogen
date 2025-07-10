@@ -48,7 +48,12 @@ ws = worksheets['tracker']
 updated_ws = worksheets['updated']
 
 # ---- OpenAI Setup ----
-openai_key = st.secrets.get("openai_api_key") or (st.secrets.get("openai", {}) or {}).get("api_key")
+# DEBUG: Was ist in st.secrets?
+st.write("🔒 st.secrets keys:", list(st.secrets.keys()))
+st.write("🔒 st.secrets content:", st.secrets)
+# Versuche verschiedenen Keys
+openai_key = st.secrets.get("openai_api_key") or (st.secrets.get("openai") or {}).get("api_key")
+st.write("🔑 openai_key:", openai_key)
 if not openai_key:
     st.error("OpenAI API Key nicht gefunden. Bitte openai_api_key in Secrets setzen oder nested unter [openai] api_key hinterlegen.")
     st.stop()

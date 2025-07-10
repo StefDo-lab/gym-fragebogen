@@ -15,7 +15,7 @@ PROMPT_TEMPLATE_PATH = "prompt_templates/update_plan.txt"
 UPDATED_PLANS_SHEET = "Aktualisierte_Pläne"
 
 # ---- Google Sheets Setup ----
-@st.experimental_singleton
+@st.cache_resource
 def get_ws():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",

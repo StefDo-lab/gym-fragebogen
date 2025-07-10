@@ -7,6 +7,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from string import Template
 import openai
 import json
+import os
 
 # ---- Konfiguration ----
 SHEET_NAME = "Workout Tabelle"
@@ -22,41 +23,53 @@ def get_gspread_client():
         "https://www.googleapis.com/auth/drive",
     ]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        dict(st.secrets["gcp_service_account"]), scopes
+        st.secrets["gcp_service_account"], scopes
     )
     return gspread.authorize(creds)
 
 @st.cache_data
+def open_sheets():
+    client = get_gspread_client()
+    ss = client.open(SHEET_NAME)
+    sheets = {}
+    sheets['tracker'] = ss.worksheet(WORKSHEET_NAME)
+    sheets['fragebogen'] = ss.worksheet("fragebogen")
+    try:
+        sheets['updated'] = ss.worksheet(UPDATED_PLANS_SHEET)
+    except gspread.exceptions.WorksheetNotFound:
+        sheets['updated'] = ss.add_worksheet(
+            title=UPDATED_PLANS_SHEET, rows=1, cols=3
+        )
+        sheets['updated'].append_row(['UserID', 'Datum', 'PlanJSON'])
+    return sheets
+
+worksheets = open_sheets()
+ws = worksheets['tracker']
+updated_ws = worksheets['updated']
+
+# ---- OpenAI Setup ----
+openai_key = st.secrets.get("openai_api_key") or (st.secrets.get("openai", {}) or {}).get("api_key")
+if not openai_key:
+    st.error("OpenAI API Key nicht gefunden. Bitte openai_api_key in Secrets setzen oder nested unter [openai] api_key hinterlegen.")
+    st.stop()
+openai.api_key = openai_key
+
+# ---- Prompt-Template laden mit Konfiguration ----
+@st.cache_data
 def load_prompt_and_config(path: str):
-    import os
     if not os.path.exists(path):
-        st.error(f"Prompt-Template nicht gefunden: {path}. Bitte sicherstellen, dass die Datei im Projektverzeichnis liegt.")
-        # Fallback-Prompt
-        default = "Nutze die folgenden Daten, um einen Trainingsplan zu erstellen: ${workout_list}"
+        st.error(f"Prompt-Template nicht gefunden: {path}")
+        default = "Nutze folgende Daten, um einen Trainingsplan zu erstellen: ${workout_list}"
         return Template(default), {'temperature': 0.7, 'max_tokens': 1500}
     with open(path, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     config = {}
     idx = 0
-    # Meta-Kommentare (# key: value) einlesen
     while idx < len(lines) and lines[idx].startswith('#'):
         key, val = lines[idx][1:].split(':', 1)
         config[key.strip()] = float(val.strip())
         idx += 1
-    # Rest als Prompt-Template
-    template_text = "
-".join(lines[idx:])
-    return Template(template_text), config(default), {'temperature': 0.7, 'max_tokens': 1500}
-    with open(path, 'r', encoding='utf-8') as f:
-        lines = f.read().splitlines()
-    config = {}
-    idx = 0
-    while idx < len(lines) and lines[idx].startswith('#'):
-        key, val = lines[idx][1:].split(':', 1)
-        config[key.strip()] = float(val.strip())
-        idx += 1
-    template_text = '
-'.join(lines[idx:])
+    template_text = "\n".join(lines[idx:])
     return Template(template_text), config
 
 prompt_template, prompt_config = load_prompt_and_config(PROMPT_TEMPLATE_PATH)
@@ -66,9 +79,8 @@ st.set_page_config(page_title="📋 Workout Tracker + Plan-Update", layout="wide
 st.title("📋 Workout Tracker (Google Sheets)")
 
 # Login / UserID
-if "userid" not in st.session_state:
+if 'userid' not in st.session_state:
     st.session_state.userid = None
-
 uid = st.text_input("UserID", type="password")
 if st.button("Login"):
     header = ws.row_values(1)
@@ -83,7 +95,6 @@ if st.button("Login"):
             st.success(f"Eingeloggt als {uid}")
         else:
             st.error("Ungültige UserID.")
-
 if not st.session_state.userid:
     st.stop()
 
@@ -128,19 +139,21 @@ with st.expander("Alte Workouts", expanded=False):
 st.header("Trainingsplan aktualisieren")
 additional_goals = st.text_area("Zusätzliche Ziele/Wünsche (optional)")
 col1, col2 = st.columns(2)
-
 if col1.button("Sofort ausführen"):
     all_rec = ws.get_all_records()
     archived = [r for r in all_rec if r.get('Status')=='archiviert' and r.get('UserID')==st.session_state.userid]
     archived.sort(key=lambda x: datetime.datetime.strptime(x.get('Datum','1900-01-01'), '%Y-%m-%d'))
     qb = worksheets['fragebogen'].get_all_records()
     user_qb = next((r for r in qb if r.get('UserID')==st.session_state.userid), {})
-    workout_list = "\n".join([f"- {w['Datum']}: {w['Übung']} ({w.get('Gewicht','')}kg x {w.get('Wdh','')} Wdh)" for w in archived])
+    workout_list = "\n".join([
+        f"- {w['Datum']}: {w['Übung']} ({w.get('Gewicht','')}kg x {w.get('Wdh','')} Wdh)"
+        for w in archived
+    ])
     data = {**user_qb, 'workout_list': workout_list, 'additional_goals': additional_goals}
     prompt = prompt_template.safe_substitute(data)
     full_prompt = "Bitte gib deine Antwort ausschließlich als gültiges JSON zurück.\n" + prompt
-    temp = prompt_config['temperature']
-    tokens = int(prompt_config['max_tokens'])
+    temp = prompt_config.get('temperature', 0.7)
+    tokens = int(prompt_config.get('max_tokens', 1500))
     resp = openai.ChatCompletion.create(
         model='gpt-4o-mini',
         messages=[{'role':'user','content': full_prompt}],
@@ -157,5 +170,4 @@ if col1.button("Sofort ausführen"):
         updated_ws.append_row([st.session_state.userid, datetime.date.today().isoformat(), json.dumps(plan)])
         st.success("Plan aktualisiert und gespeichert!")
         st.json(plan)
-
 col2.info("Für regelmäßige Updates richte externen Scheduler ein.")

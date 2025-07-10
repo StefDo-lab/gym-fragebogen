@@ -48,12 +48,18 @@ ws = worksheets['tracker']
 updated_ws = worksheets['updated']
 
 # ---- OpenAI Setup ----
-# Lade OpenAI API Key direkt aus Secrets
-try:
-    openai.api_key = st.secrets["openai_api_key"]
-except KeyError:
-    st.error("Secret 'openai_api_key' nicht gefunden. Bitte unter Manage App → Secrets anlegen.")
+# Lade OpenAI API Key: zuerst aus Streamlit-Secrets, dann aus Environment-Variable
+openai_key = st.secrets.get("openai_api_key") or \
+             (st.secrets.get("openai") or {}).get("api_key") or \
+             os.getenv("OPENAI_API_KEY")
+if not openai_key:
+    st.error(
+        "OpenAI API Key nicht gefunden. "
+        "Bitte unter Manage App → Secrets `openai_api_key` setzen, "
+        "oder die Umgebungsvariable `OPENAI_API_KEY` einrichten."
+    )
     st.stop()
+openai.api_key = openai_key
 
 # ---- Prompt-Template laden mit Konfiguration ----
 @st.cache_data

@@ -50,10 +50,11 @@ ws = worksheets['tracker']
 updated_ws = worksheets['updated']
 
 # ---- OpenAI Setup ----
-# Füge in Streamlit Cloud Secrets den Key `openai_api_key` ein
-openai.api_key = st.secrets.get("openai_api_key", None)
+# Versuche sowohl Top-Level key als auch nested key
+openai_key = st.secrets.get("openai_api_key") or (st.secrets.get("openai") or {}).get("api_key")
+openai.api_key = openai_key
 if not openai.api_key:
-    st.error("OpenAI API Key nicht gefunden. Bitte `openai_api_key` in Secrets setzen.")
+    st.error("OpenAI API Key nicht gefunden. Bitte `openai_api_key` in Secrets setzen oder nested unter [openai] api_key hinterlegen.")
     st.stop()
 
 # ---- Prompt-Template laden mit Konfiguration ----

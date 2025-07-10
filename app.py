@@ -48,18 +48,18 @@ ws = worksheets['tracker']
 updated_ws = worksheets['updated']
 
 # ---- OpenAI Setup ----
-# Versuche, den API-Key direkt aus Secrets bzw. Umgebungsvariable zu lesen
 try:
     openai_key = st.secrets["openai_api_key"]
 except KeyError:
-    try:
-        openai_key = st.secrets["openai"]["api_key"]
-    except Exception:
-        openai_key = os.getenv("OPENAI_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+# Fallback: temporäre Eingabe des Keys über UI
+if not openai_key:
+    openai_key = st.text_input("**API Key fehlt** – bitte OpenAI API Key eingeben (wird nicht gespeichert)", type="password")
+    if openai_key:
+        st.warning("Key nur temporär genutzt. Für Dauerbetrieb bitte in Secrets speichern.")
 if not openai_key:
     st.error(
-        "OpenAI API Key nicht gefunden. Bitte `openai_api_key` in Secrets anlegen, "
-        "oder unter [openai] api_key, oder Umgebungsvariable OPENAI_API_KEY setzen."
+        "OpenAI API Key nicht gefunden. Bitte openai_api_key in Secrets setzen oder Umgebungsvariable OPENAI_API_KEY einrichten."
     )
     st.stop()
 openai.api_key = openai_key

@@ -65,6 +65,12 @@ if not openai.api_key:
 # ---- Prompt-Template laden mit Konfiguration ----
 @st.cache_data
 def load_prompt_and_config(path: str):
+    import os
+    if not os.path.exists(path):
+        st.error(f"Prompt-Template nicht gefunden: {path}. Bitte sicherstellen, dass die Datei im Projektverzeichnis liegt.")
+        # Fallback-Prompt
+        default = "Nutze die folgenden Daten, um einen Trainingsplan zu erstellen: ${workout_list}"
+        return Template(default), {'temperature': 0.7, 'max_tokens': 1500}
     with open(path, 'r', encoding='utf-8') as f:
         lines = f.read().splitlines()
     config = {}
@@ -73,7 +79,8 @@ def load_prompt_and_config(path: str):
         key, val = lines[idx][1:].split(':', 1)
         config[key.strip()] = float(val.strip())
         idx += 1
-    template_text = '\n'.join(lines[idx:])
+    template_text = '
+'.join(lines[idx:])
     return Template(template_text), config
 
 prompt_template, prompt_config = load_prompt_and_config(PROMPT_TEMPLATE_PATH)

@@ -27,24 +27,24 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-@st.cache_data
 def open_sheets():
     client = get_gspread_client()
     ss = client.open(SHEET_NAME)
-    sheets = {}
-    # Debug: liste aller verfügbaren Sheets
+
+    # Debug: entferne st.write aus gecachten Funktionen
+    # alle Tabellenblätter ermitteln
     all_titles = [sh.title for sh in ss.worksheets()]
-    st.write("Verfügbare Tabellenblätter:", all_titles)
+    # Benutzer bekommt hier im Hauptcode die Liste, nicht in dieser Funktion
+
+    sheets = {}
     try:
         sheets['tracker'] = ss.worksheet(WORKSHEET_NAME)
     except Exception:
-        st.error(f"Tracker-Sheet '{WORKSHEET_NAME}' nicht gefunden. Verfügbare: {all_titles}")
-        st.stop()
+        raise RuntimeError(f"Tracker-Sheet '{WORKSHEET_NAME}' nicht gefunden. Verfügbare: {all_titles}")
     try:
         sheets['fragebogen'] = ss.worksheet("fragebogen")
     except Exception:
-        st.error(f"Fragebogen-Sheet 'fragebogen' nicht gefunden. Verfügbare: {all_titles}")
-        st.stop()
+        raise RuntimeError(f"Fragebogen-Sheet 'fragebogen' nicht gefunden. Verfügbare: {all_titles}")
     try:
         sheets['updated'] = ss.worksheet(UPDATED_PLANS_SHEET)
     except gspread.exceptions.WorksheetNotFound:

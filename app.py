@@ -11,7 +11,7 @@ import os
 
 # ---- Konfiguration ----
 SHEET_NAME = "Workout Tabelle"
-WORKSHEET_NAME = "Tabellenblatt1"
+WORKSHEET_NAME = "Tabellenblatt1"  # exakt wie im Spreadsheet-Tabellenblatt-Titel  # ggf. genau wie im Google Sheet-Tabellenblatt-Titel anpassen
 PROMPT_TEMPLATE_PATH = "prompt_templates/update_plan.txt"
 UPDATED_PLANS_SHEET = "Aktualisierte_Pläne"
 

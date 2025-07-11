@@ -18,6 +18,7 @@ ARCHIVE_SHEET = "Workout_archiv"    # Historische Daten
 FRAGEBOGEN_SHEET = "fragebogen"     # User-Profil
 PLAN_HISTORY_SHEET = "Plan_Historie" # Alte Pläne
 PROMPT_TEMPLATE_PATH = "prompt_templates/update_plan.txt"
+SYSTEM_PROMPT_PATH = "prompt_templates/system_prompt.txt"
 
 # ---- Google Sheets Setup ----
 @st.cache_resource
@@ -106,7 +107,7 @@ if not openai_key:
 
 client = OpenAI(api_key=openai_key)
 
-# ---- Standard Prompt Template ----
+# ---- Standard Templates ----
 DEFAULT_PROMPT_TEMPLATE = """
 Du bist ein professioneller Fitness-Trainer. Erstelle einen personalisierten Trainingsplan.
 
@@ -122,23 +123,56 @@ ${workout_summary}
 ZUSÄTZLICHE WÜNSCHE:
 ${additional_goals}
 
-Erstelle einen progressiven 4-Wochen-Plan, der auf den bisherigen Leistungen aufbaut.
-Berücksichtige die Regeneration und steigere die Intensität angemessen.
+Erstelle einen Trainingsplan für die nächste Woche basierend auf den bisherigen Leistungen.
 """
 
-# ---- Prompt-Template laden ----
+DEFAULT_SYSTEM_PROMPT = """Erstelle einen Trainingsplan im folgenden Format:
+
+Tag 1 - Oberkörper:
+- Bankdrücken: 3 Sätze, 80kg, 8-10 Wdh
+- Rudern: 3 Sätze, 60kg, 10-12 Wdh
+
+Tag 2 - Unterkörper:
+- Kniebeuge: 4 Sätze, 100kg, 6-8 Wdh
+- Kreuzheben: 3 Sätze, 120kg, 5 Wdh
+
+Wichtig: 
+- Nur 1 Woche planen
+- Klare Struktur
+- Realistische Gewichte basierend auf Historie
+- Maximal 6 Übungen pro Tag"""
+
+# ---- Template Loader ----
 @st.cache_data
-def load_prompt_and_config(path: str):
+def load_template(path: str, default: str):
     if os.path.exists(path):
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            return Template(content), {'temperature': 0.7, 'max_tokens': 2000}
+                return f.read()
         except:
             pass
-    return Template(DEFAULT_PROMPT_TEMPLATE), {'temperature': 0.7, 'max_tokens': 2000}
+    return default
 
-prompt_template, prompt_config = load_prompt_and_config(PROMPT_TEMPLATE_PATH)
+# ---- Prompt-Template laden ----
+@st.cache_data
+def load_prompt_and_config():
+    prompt_content = load_template(PROMPT_TEMPLATE_PATH, DEFAULT_PROMPT_TEMPLATE)
+    system_content = load_template(SYSTEM_PROMPT_PATH, DEFAULT_SYSTEM_PROMPT)
+    
+    # Erstelle Template-Dateien falls nicht vorhanden
+    os.makedirs("prompt_templates", exist_ok=True)
+    
+    if not os.path.exists(PROMPT_TEMPLATE_PATH):
+        with open(PROMPT_TEMPLATE_PATH, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_PROMPT_TEMPLATE)
+    
+    if not os.path.exists(SYSTEM_PROMPT_PATH):
+        with open(SYSTEM_PROMPT_PATH, 'w', encoding='utf-8') as f:
+            f.write(DEFAULT_SYSTEM_PROMPT)
+    
+    return Template(prompt_content), system_content, {'temperature': 0.7, 'max_tokens': 1000}
+
+prompt_template, system_prompt, prompt_config = load_prompt_and_config()
 
 # ---- Hilfsfunktionen ----
 def get_header_row(worksheet):
@@ -168,14 +202,16 @@ def analyze_workout_history(archive_df, user_id, days=30):
     
     summary = []
     if 'Übung' in user_archive.columns:
-        for exercise in user_archive['Übung'].unique():
+        # Limitiere auf die 10 wichtigsten Übungen
+        top_exercises = user_archive['Übung'].value_counts().head(10).index
+        
+        for exercise in top_exercises:
             ex_data = user_archive[user_archive['Übung'] == exercise]
             max_weight = ex_data['Gewicht'].max() if 'Gewicht' in ex_data.columns else 0
             avg_reps = ex_data['Wdh'].mean() if 'Wdh' in ex_data.columns else 0
-            count = len(ex_data)
-            summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
+            summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh")
     
-    return "\n".join(summary)
+    return "\n".join(summary[:10])  # Maximal 10 Zeilen
 
 def parse_ai_plan_to_rows(plan_text, user_id):
     """Konvertiert den KI-generierten Plan in Tabellenzeilen"""
@@ -367,14 +403,14 @@ with tab1:
                             with col4:
                                 erledigt = row.get('Erledigt', False)
                                 if erledigt in [True, 'TRUE', 'true', 1]:
-                                    if st.button("✓", key=f"undo_{idx}", help="Als nicht erledigt markieren"):
+                                    if st.button("✓ Erledigt", key=f"undo_{idx}", help="Als nicht erledigt markieren", type="primary"):
                                         # Update: nicht erledigt
                                         row_num = idx + 2
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Erledigt') + 1, 'FALSE')
                                         st.cache_data.clear()
                                         st.rerun()
                                 else:
-                                    if st.button("○", key=f"done_{idx}", help="Als erledigt markieren"):
+                                    if st.button("Als erledigt markieren", key=f"done_{idx}"):
                                         # Update Gewicht und Wdh
                                         row_num = idx + 2
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Gewicht') + 1, new_weight)
@@ -482,8 +518,8 @@ with tab2:
             history_summary = analyze_workout_history(archive_data, st.session_state.userid)
             st.text(history_summary)
     
-    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche")
-    plan_name = st.text_input("Plan-Name (optional)")
+    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche (optional)")
+    plan_name = st.text_input("Plan-Name (optional)", placeholder="z.B. Woche 1 - Push/Pull")
     
     if st.button("Plan erstellen", type="primary"):
         with st.spinner("KI erstellt deinen Plan..."):
@@ -495,7 +531,7 @@ with tab2:
                     user_profile = next((r for r in fb_records if r.get('UserID') == st.session_state.userid), {})
                     fragebogen_data = {k: v for k, v in user_profile.items() if k != 'UserID'}
                 
-                # Analysiere Historie
+                # Analysiere Historie (kompakt)
                 workout_summary = analyze_workout_history(archive_data, st.session_state.userid) if not archive_data.empty else "Keine Daten"
                 
                 # Template-Daten
@@ -510,22 +546,15 @@ with tab2:
                 
                 prompt = prompt_template.safe_substitute(template_data)
                 
-                system_prompt = """Erstelle einen Trainingsplan im folgenden Format:
-                
-Tag 1 - Oberkörper:
-- Bankdrücken: 3 Sätze, 80kg, 8-10 Wdh
-- Rudern: 3 Sätze, 60kg, 10-12 Wdh
-                
-Wichtig: Klare Struktur, realistische Gewichte basierend auf der Historie."""
-                
+                # OpenAI API Aufruf mit reduziertem Token-Limit
                 response = client.chat.completions.create(
                     model='gpt-4o-mini',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
-                    max_tokens=2000
+                    temperature=prompt_config.get('temperature', 0.7),
+                    max_tokens=prompt_config.get('max_tokens', 1000)  # Reduziert
                 )
                 
                 plan_text = response.choices[0].message.content
@@ -560,6 +589,14 @@ Wichtig: Klare Struktur, realistische Gewichte basierend auf der Historie."""
                                 new_row[i] = str(row_data[col_name])
                         ws_current.append_row(new_row)
                     
+                    # Speichere Plan-Text in Historie
+                    ws_plan_history.append_row([
+                        st.session_state.userid,
+                        datetime.date.today().isoformat(),
+                        plan_name or f"KI-Plan vom {datetime.date.today()}",
+                        plan_text
+                    ])
+                    
                     st.success("Neuer Plan wurde aktiviert!")
                     st.cache_data.clear()
                     
@@ -567,9 +604,13 @@ Wichtig: Klare Struktur, realistische Gewichte basierend auf der Historie."""
                         st.text(plan_text)
                     
                     st.rerun()
+                else:
+                    st.error("Konnte keinen Plan erstellen. Bitte versuche es erneut.")
                 
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")
+                if "quota" in str(e).lower():
+                    st.error("API-Limit erreicht. Bitte später versuchen.")
 
 # ---- Tab 3: Historie ----
 with tab3:
@@ -604,7 +645,7 @@ with tab3:
                             else:
                                 st.json(data)
                         else:
-                            st.text(plan_data)
+                            st.text(plan_data[:500] + "..." if len(plan_data) > 500 else plan_data)
                     except:
                         st.text(plan_data[:500] + "..." if len(plan_data) > 500 else plan_data)
         else:

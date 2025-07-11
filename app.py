@@ -100,6 +100,10 @@ st.set_page_config(page_title="📋 Workout Tracker + Plan-Update", layout="wide
 st.title("📋 Workout Tracker (Google Sheets)")
 
 # Login / UserID
+# Debug: Liste alle Tabellenblätter
+all_titles = [sh.title for sh in get_gspread_client().open(SHEET_NAME).worksheets()]
+st.write("📄 Verfügbare Tabellenblätter:", all_titles)
+
 if 'userid' not in st.session_state:
     st.session_state.userid = None
 uid = st.text_input("UserID", type="password")

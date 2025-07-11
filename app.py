@@ -8,6 +8,8 @@ from string import Template
 from openai import OpenAI
 import json
 import os
+import re
+import traceback
 
 # ---- Konfiguration ----
 SHEET_NAME = "Workout Tabelle"
@@ -303,12 +305,24 @@ col1, col2 = st.columns(2)
 if col1.button("Sofort ausführen"):
     with st.spinner("Erstelle Trainingsplan..."):
         try:
+            # Debug: Zeige ob API Key vorhanden
+            st.write(f"API Key vorhanden: {'Ja' if openai_key else 'Nein'}")
+            st.write(f"API Key Länge: {len(openai_key) if openai_key else 0}")
+            
             # Hole archivierte Workouts
             all_rec = ws.get_all_records()
             archived = [
                 r for r in all_rec 
                 if r.get('Status') == 'archiviert' and r.get('UserID') == st.session_state.userid
             ]
+            
+            # Debug: Zeige Anzahl archivierter Workouts
+            st.write(f"Gefundene archivierte Workouts: {len(archived)}")
+            
+            # Wenn keine archivierten Workouts, zeige Warnung
+            if not archived:
+                st.warning("Keine archivierten Workouts gefunden. Bitte erst Workouts archivieren.")
+                st.stop()
             
             # Sortiere nach Datum
             archived.sort(key=lambda x: datetime.datetime.strptime(
@@ -337,20 +351,37 @@ if col1.button("Sofort ausführen"):
             
             # Prompt erstellen
             prompt = prompt_template.safe_substitute(data)
-            full_prompt = "Bitte gib deine Antwort ausschließlich als gültiges JSON zurück.\n" + prompt
+            
+            # Vereinfachter Prompt für besseres JSON
+            system_prompt = """Du bist ein Fitness-Trainer. Erstelle einen Trainingsplan als JSON.
+            
+Antworte NUR mit einem gültigen JSON-Objekt in diesem Format:
+{
+  "trainingsplan": {
+    "woche1": {
+      "tag1": [
+        {"übung": "Kniebeuge", "sätze": 3, "wiederholungen": "8-10", "gewicht": "80kg"},
+        {"übung": "Bankdrücken", "sätze": 3, "wiederholungen": "8-10", "gewicht": "60kg"}
+      ]
+    }
+  }
+}
+
+Keine zusätzlichen Erklärungen, nur JSON!"""
             
             # OpenAI API Aufruf
             temp = prompt_config.get('temperature', 0.7)
             tokens = int(prompt_config.get('max_tokens', 1500))
             
+            # Debug: Zeige Prompt
+            with st.expander("Debug: Prompt an ChatGPT"):
+                st.text(prompt[:500] + "..." if len(prompt) > 500 else prompt)
+            
             response = client.chat.completions.create(
                 model='gpt-4o-mini',
                 messages=[
-                    {
-                        "role": "system", 
-                        "content": "Du bist ein Fitness-Trainer, der personalisierte Trainingspläne erstellt. Antworte immer im JSON-Format."
-                    },
-                    {"role": "user", "content": full_prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=temp,
                 max_tokens=tokens
@@ -358,13 +389,19 @@ if col1.button("Sofort ausführen"):
             
             raw = response.choices[0].message.content
             
+            # Debug: Zeige Roh-Antwort
+            with st.expander("Debug: ChatGPT Antwort"):
+                st.code(raw)
+            
+            # Versuche JSON zu extrahieren (falls Text drumherum)
+            json_match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if json_match:
+                raw = json_match.group()
+            
             # JSON parsen
             try:
                 plan = json.loads(raw)
-            except json.JSONDecodeError as e:
-                st.error(f"Ungültiges JSON: {e}")
-                st.code(raw)
-            else:
+                
                 # Plan speichern
                 updated_ws.append_row([
                     st.session_state.userid, 
@@ -374,14 +411,24 @@ if col1.button("Sofort ausführen"):
                 st.success("Plan aktualisiert und gespeichert!")
                 st.json(plan)
                 
+            except json.JSONDecodeError as e:
+                st.error(f"Ungültiges JSON: {e}")
+                st.code(raw)
+                
         except Exception as e:
-            st.error(f"Fehler bei der Plan-Erstellung: {e}")
-            st.exception(e)
+            st.error(f"Fehler bei der Plan-Erstellung: {str(e)}")
+            st.code(traceback.format_exc())
 
 col2.info("Für regelmäßige Updates richte einen externen Scheduler ein.")
 
 # ---- Neues Workout/Übung hinzufügen ----
 st.header("Neues Workout/Übung hinzufügen")
+
+# Debug: Zeige Spaltenstruktur
+with st.expander("Debug: Spaltenstruktur"):
+    header = get_header_row(ws)
+    st.write("Spalten im Sheet:", header)
+    st.write("Anzahl Spalten:", len(header))
 
 col1, col2 = st.columns(2)
 with col1:
@@ -396,40 +443,44 @@ with col2:
 if st.button("Workout hinzufügen"):
     if new_workout and new_exercise:
         try:
-            # Hole aktuelle Daten für maximale Zeile
-            all_data = ws.get_all_values()
-            next_row = len(all_data) + 1
+            # Hole Header für Spalten-Mapping
+            header = get_header_row(ws)
             
-            # Füge neue Zeilen hinzu
-            new_rows = []
+            # Erstelle neue Zeilen basierend auf tatsächlicher Struktur
             for satz in range(1, new_sets + 1):
-                new_rows.append([
-                    st.session_state.userid,
-                    datetime.date.today().isoformat(),
-                    new_workout,
-                    new_exercise,
-                    satz,
-                    new_weight,
-                    new_reps,
-                    False,  # Erledigt
-                    "aktiv"  # Status
-                ])
+                new_row = [''] * len(header)  # Leere Zeile mit richtiger Länge
+                
+                # Fülle nur die Spalten die existieren
+                for i, col_name in enumerate(header):
+                    if col_name == 'UserID':
+                        new_row[i] = st.session_state.userid
+                    elif col_name == 'Datum':
+                        new_row[i] = datetime.date.today().isoformat()
+                    elif col_name == 'Workout Name':
+                        new_row[i] = new_workout
+                    elif col_name == 'Übung':
+                        new_row[i] = new_exercise
+                    elif col_name == 'Satz-Nr.':
+                        new_row[i] = satz
+                    elif col_name == 'Gewicht':
+                        new_row[i] = new_weight
+                    elif col_name == 'Wdh':
+                        new_row[i] = new_reps
+                    elif col_name == 'Erledigt':
+                        new_row[i] = False
+                    elif col_name == 'Status':
+                        new_row[i] = 'aktiv'
+                
+                # Zeile hinzufügen
+                ws.append_row(new_row)
             
-            # Batch update
-            if new_rows:
-                # Finde die Anzahl der Spalten
-                header = get_header_row(ws)
-                num_cols = len(header)
-                
-                # Update Range
-                range_str = f"A{next_row}:{chr(65 + num_cols - 1)}{next_row + len(new_rows) - 1}"
-                ws.update(range_str, new_rows)
-                
-                st.success(f"Workout '{new_workout}' mit {new_sets} Sätzen hinzugefügt!")
-                st.cache_data.clear()
-                st.rerun()
+            st.success(f"Workout '{new_workout}' mit {new_sets} Sätzen hinzugefügt!")
+            st.cache_data.clear()
+            st.rerun()
+            
         except Exception as e:
-            st.error(f"Fehler beim Hinzufügen: {e}")
+            st.error(f"Fehler beim Hinzufügen: {str(e)}")
+            st.code(traceback.format_exc())
     else:
         st.error("Bitte Workout Name und Übung eingeben.")
 

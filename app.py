@@ -82,16 +82,27 @@ except Exception as e:
     st.error(f"Fehler beim Öffnen der Sheets: {e}")
     st.stop()
 
-# ---- OpenAI Setup (FIXED) ----
+# ---- OpenAI Setup mit Debug ----
 def get_openai_key():
-    # Versuche alle möglichen Schreibweisen
-    for key_name in ["openai_api_key", "OPENAI_API_KEY", "OpenAI_API_Key"]:
-        if key_name in st.secrets:
+    # Debug: Zeige verfügbare Secrets
+    if hasattr(st, 'secrets'):
+        available_keys = list(st.secrets.keys())
+        # Zeige Debug nur im Sidebar
+        with st.sidebar:
+            st.write("Debug - Verfügbare Secrets:", available_keys)
+    
+    # Versuche verschiedene Schreibweisen
+    for key_name in ["openai_api_key", "OPENAI_API_KEY", "OpenAI_API_Key", "openai_key"]:
+        if hasattr(st, 'secrets') and key_name in st.secrets:
+            with st.sidebar:
+                st.success(f"✓ API Key gefunden: {key_name}")
             return st.secrets[key_name]
     
     # Fallback auf Umgebungsvariable
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
+        with st.sidebar:
+            st.info("API Key aus Umgebungsvariable")
         return env_key
     
     return None
@@ -99,7 +110,7 @@ def get_openai_key():
 openai_key = get_openai_key()
 
 if not openai_key:
-    st.warning("OpenAI API Key nicht in Secrets gefunden. Bitte manuell eingeben.")
+    st.warning("OpenAI API Key nicht in Secrets gefunden.")
     openai_key = st.text_input(
         "**API Key eingeben**", 
         type="password",
@@ -107,9 +118,6 @@ if not openai_key:
     )
     if openai_key:
         st.info("Key wird nur für diese Sitzung verwendet.")
-    else:
-        st.error("Ohne API Key kann kein neuer Plan erstellt werden.")
-        # Nicht stoppen - User kann trotzdem seinen aktuellen Plan sehen
 
 if openai_key:
     client = OpenAI(api_key=openai_key)
@@ -186,7 +194,6 @@ def load_prompt_and_config():
         with open(SYSTEM_PROMPT_PATH, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_SYSTEM_PROMPT)
     
-    # Erhöhtes Token-Limit für vollständige Pläne
     return Template(prompt_content), system_content, {'temperature': 0.7, 'max_tokens': 2500}
 
 prompt_template, system_prompt, prompt_config = load_prompt_and_config()
@@ -204,7 +211,6 @@ def analyze_workout_history(archive_df, user_id, days=30):
     if archive_df.empty:
         return "Keine historischen Daten vorhanden."
     
-    # Problem: UserID könnte in verschiedenen Schreibweisen vorkommen
     user_archive = archive_df[archive_df['UserID'].astype(str).str.strip() == str(user_id).strip()].copy()
     
     if 'Datum' in user_archive.columns:
@@ -220,7 +226,6 @@ def analyze_workout_history(archive_df, user_id, days=30):
     
     summary = []
     if 'Übung' in user_archive.columns:
-        # Alle relevanten Übungen, keine künstliche Limitierung
         exercise_counts = user_archive['Übung'].value_counts()
         
         for exercise in exercise_counts.index:
@@ -245,11 +250,9 @@ def parse_ai_plan_to_rows(plan_text, user_id):
         if not line:
             continue
             
-        # Erkenne Workout-Namen (flexibler)
+        # Erkenne Workout-Namen
         if ':' in line and not line.startswith('-') and not line.startswith('•'):
-            # Potentieller Workout-Name
             potential_workout = line.split(':')[0].strip()
-            # Prüfe ob es wie ein Workout-Name aussieht
             if len(potential_workout) < 50 and not any(char.isdigit() and 'kg' in line for char in line):
                 current_workout = potential_workout
                 continue
@@ -285,17 +288,17 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                         rows.append({
                             'UserID': user_id,
                             'Datum': current_date.isoformat(),
-                            'Name': '',  # Neue Spalte
+                            'Name': '',
                             'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
                             'Übung': exercise_name,
                             'Satz-Nr.': satz,
                             'Gewicht': weight,
                             'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
-                            'Einheit': 'kg',  # Neue Spalte
-                            'Typ': '',  # Neue Spalte
+                            'Einheit': 'kg',
+                            'Typ': '',
                             'Erledigt': 'FALSE',
-                            'Mitteilung an den Trainer': '',  # Neue Spalte
-                            'Hinweis vom Trainer': ''  # Neue Spalte
+                            'Mitteilung an den Trainer': '',
+                            'Hinweis vom Trainer': ''
                         })
             except:
                 continue
@@ -308,7 +311,6 @@ st.set_page_config(page_title="Workout Tracker", layout="wide", initial_sidebar_
 # Custom CSS für mobile Optimierung
 st.markdown("""
 <style>
-    /* Kompaktere Darstellung */
     .stButton > button {
         width: 100%;
         padding: 0.25rem 0.5rem;
@@ -317,11 +319,9 @@ st.markdown("""
     .row-widget.stNumberInput {
         max-width: 100px;
     }
-    /* Kleinere Metrics */
     [data-testid="metric-container"] {
         padding: 0.5rem;
     }
-    /* Kompaktere Expander */
     .streamlit-expanderHeader {
         font-size: 1rem;
         padding: 0.5rem;
@@ -331,31 +331,19 @@ st.markdown("""
 
 st.title("Workout Tracker")
 
-# Login mit Debug
+# Login
 if 'userid' not in st.session_state:
     st.session_state.userid = None
 
 if not st.session_state.userid:
     uid = st.text_input("UserID", type="password")
     
-    # Debug-Modus
-    if st.checkbox("Debug-Modus"):
-        header = get_header_row(ws_current)
-        st.write("Header-Spalten:", header)
-        if "UserID" in header:
-            uid_col = header.index("UserID")
-            all_values = ws_current.get_all_values()
-            valid_ids = [row[uid_col] for row in all_values[1:] if len(row) > uid_col and row[uid_col]]
-            st.write("Gefundene UserIDs:", valid_ids[:5], "...")  # Zeige nur erste 5
-    
     if st.button("Login"):
         header = get_header_row(ws_current)
         try:
-            # Finde erste UserID Spalte (es gibt offenbar zwei)
             uid_col = header.index("UserID")
             all_values = ws_current.get_all_values()
             
-            # Sammle alle UserIDs (bereinigt)
             valid_ids = []
             for row in all_values[1:]:
                 if len(row) > uid_col and row[uid_col]:
@@ -363,7 +351,6 @@ if not st.session_state.userid:
                     if clean_id and clean_id not in valid_ids:
                         valid_ids.append(clean_id)
             
-            # Bereinige eingegebene ID
             clean_uid = uid.strip()
             
             if clean_uid in valid_ids:
@@ -382,7 +369,7 @@ if not st.session_state.userid:
 # ---- Hauptnavigation ----
 tab1, tab2, tab3 = st.tabs(["Training", "Neuer Plan", "Historie"])
 
-# ---- Tab 1: Aktueller Plan (Mobile optimiert) ----
+# ---- Tab 1: Aktueller Plan ----
 with tab1:
     # Lade aktuelle Daten
     @st.cache_data(ttl=60)
@@ -397,7 +384,6 @@ with tab1:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-            # Bereinige UserID
             if 'UserID' in df.columns:
                 df['UserID'] = df['UserID'].astype(str).str.strip()
             
@@ -409,7 +395,6 @@ with tab1:
     current_df = load_current_plan()
     
     if not current_df.empty:
-        # Bereinige UserID für Vergleich
         user_plan = current_df[current_df['UserID'] == st.session_state.userid.strip()]
         
         if not user_plan.empty:
@@ -427,64 +412,99 @@ with tab1:
                 for exercise in exercises:
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
-                    # Übung als Expander (standardmäßig eingeklappt)
+                    # Übung als Expander
                     with st.expander(f"{exercise}", expanded=False):
                         # Zeige alle Sätze dieser Übung
                         for idx, row in exercise_data.iterrows():
                             st.markdown("---")
-                            col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+                            
+                            # Trainer-Hinweis anzeigen wenn vorhanden
+                            trainer_comment = row.get('Hinweis vom Trainer', '')
+                            if trainer_comment and trainer_comment.strip():
+                                st.info(f"💬 Trainer: {trainer_comment}")
+                            
+                            # Hauptzeile mit Inputs
+                            col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 1, 0.5])
                             
                             with col1:
                                 st.write(f"**Satz {int(row.get('Satz-Nr.', 1))}**")
                             
                             with col2:
                                 new_weight = st.number_input(
-                                    "kg",
+                                    "Gewicht (kg)",
                                     value=float(row.get('Gewicht', 0)),
                                     step=2.5,
-                                    key=f"weight_{idx}",
-                                    label_visibility="collapsed"
+                                    key=f"weight_{idx}"
                                 )
                             
                             with col3:
+                                # Prüfe ob es Zeit oder Wiederholungen sind
+                                einheit = row.get('Einheit', 'Wdh')
+                                if einheit.lower() in ['sek', 'sec', 'min']:
+                                    label = f"Zeit ({einheit})"
+                                    step = 5 if einheit.lower() in ['sek', 'sec'] else 1
+                                else:
+                                    label = "Wiederholungen"
+                                    step = 1
+                                
                                 new_reps = st.number_input(
-                                    "Wdh",
+                                    label,
                                     value=int(row.get('Wdh', 0)),
-                                    step=1,
-                                    key=f"reps_{idx}",
-                                    label_visibility="collapsed"
+                                    step=step,
+                                    key=f"reps_{idx}"
                                 )
                             
                             with col4:
                                 erledigt = str(row.get('Erledigt', 'FALSE')).upper()
                                 if erledigt == 'TRUE':
                                     if st.button("✓ Erledigt", key=f"undo_{idx}", help="Als nicht erledigt markieren", type="primary"):
-                                        # Update: nicht erledigt
                                         row_num = idx + 2
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Erledigt') + 1, 'FALSE')
                                         st.cache_data.clear()
                                         st.rerun()
                                 else:
-                                    if st.button("Als erledigt markieren", key=f"done_{idx}"):
-                                        # Update Gewicht und Wdh
+                                    if st.button("Erledigt", key=f"done_{idx}"):
                                         row_num = idx + 2
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Gewicht') + 1, new_weight)
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Wdh') + 1, new_reps)
                                         ws_current.update_cell(row_num, current_df.columns.get_loc('Erledigt') + 1, 'TRUE')
                                         st.cache_data.clear()
                                         st.rerun()
+                            
+                            with col5:
+                                if st.button("🗑️", key=f"del_set_{idx}", help="Satz löschen"):
+                                    ws_current.delete_rows(idx + 2)
+                                    st.cache_data.clear()
+                                    st.rerun()
+                            
+                            # Nachricht an Trainer
+                            user_message = row.get('Mitteilung an den Trainer', '')
+                            new_message = st.text_input(
+                                "Nachricht an Trainer",
+                                value=user_message,
+                                key=f"msg_{idx}",
+                                placeholder="z.B. Schulter schmerzt leicht"
+                            )
+                            
+                            # Speichere Nachricht wenn geändert
+                            if new_message != user_message:
+                                if st.button("💾 Nachricht speichern", key=f"save_msg_{idx}"):
+                                    row_num = idx + 2
+                                    msg_col = current_df.columns.get_loc('Mitteilung an den Trainer') + 1
+                                    ws_current.update_cell(row_num, msg_col, new_message)
+                                    st.success("Nachricht gespeichert!")
+                                    st.cache_data.clear()
+                                    st.rerun()
                         
                         # Optionen am Ende der Übung
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.button(f"+ Satz hinzufügen", key=f"add_set_{exercise}_{workout}"):
-                                # Füge neuen Satz hinzu
                                 last_set = exercise_data.iloc[-1]
                                 new_row = last_set.to_dict()
                                 new_row['Satz-Nr.'] = int(last_set['Satz-Nr.']) + 1
                                 new_row['Erledigt'] = 'FALSE'
                                 
-                                # Konvertiere zu Liste für append_row
                                 header = get_header_row(ws_current)
                                 row_list = [''] * len(header)
                                 for i, col in enumerate(header):
@@ -497,7 +517,6 @@ with tab1:
                         
                         with col2:
                             if st.button(f"Übung löschen", key=f"del_ex_{exercise}_{workout}"):
-                                # Lösche alle Sätze dieser Übung
                                 for del_idx in sorted(exercise_data.index, reverse=True):
                                     ws_current.delete_rows(del_idx + 2)
                                 st.cache_data.clear()
@@ -568,7 +587,6 @@ with tab2:
                 for col in ["Gewicht", "Wdh"]:
                     if col in archive_data.columns:
                         archive_data[col] = pd.to_numeric(archive_data[col], errors='coerce').fillna(0)
-                # Bereinige UserID
                 if 'UserID' in archive_data.columns:
                     archive_data['UserID'] = archive_data['UserID'].astype(str).str.strip()
         except:
@@ -713,4 +731,4 @@ with tab3:
             st.info("Noch keine Historie vorhanden.")
 
 st.markdown("---")
-st.caption("v3.1 - Fixes für neue Spaltenstruktur")
+st.caption("v3.2 - Mit allen Fixes")

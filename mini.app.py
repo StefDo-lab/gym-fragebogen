@@ -217,68 +217,74 @@ def analyze_workout_history(user_id):
         return f"Fehler beim Laden der Historie: {e}"
 
 def parse_ai_plan_to_rows(plan_text, user_id):
-    """Konvertiert einen KI-generierten Textplan in strukturierte Tabellenzeilen."""
+    """
+    Konvertiert einen KI-generierten Textplan in strukturierte Tabellenzeilen.
+    Diese Version prüft zuerst auf Übungszeilen, um eine Verwechslung mit Workout-Titeln zu vermeiden.
+    """
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = "Allgemeines Training"
-    
+    current_workout = "Allgemeines Training"  # Fallback-Name
     lines = plan_text.split('\n')
-    
+
     for line in lines:
         line = line.strip()
-        if not line:
+        if not line or "hinweise:" in line.lower() or "wichtig:" in line.lower():
             continue
-        
-        if "hinweise:" in line.lower() or "wichtig:" in line.lower():
-            break
-            
-        workout_match = re.match(r'^(?:\*\*|[-*]|\w+\s*\d*)\s*([^:]+?)\s*:', line, re.IGNORECASE)
-        if workout_match:
-            potential_workout_name = workout_match.group(1).strip()
-            if "satz" not in potential_workout_name.lower() and "wdh" not in potential_workout_name.lower():
-                 current_workout = potential_workout_name
-                 continue
 
+        # PRIORITÄT 1: Ist die Zeile eine Übung (startet mit - oder *)?
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
-        if not exercise_match:
-            continue
+        if exercise_match:
+            exercise_name = exercise_match.group(1).strip()
+            details = exercise_match.group(2).strip()
             
-        exercise_name = exercise_match.group(1).strip()
-        details = exercise_match.group(2).strip()
-        
-        try:
-            sets = 3
-            weight = 0.0
-            reps = "10"
-
-            sets_match = re.search(r'(\d+)\s*x|(\d+)\s*[Ss]ätze|(\d+)\s*[Ss]ets', details)
-            if sets_match:
-                sets = int(next(s for s in sets_match.groups() if s is not None))
-
-            weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
-            if weight_match:
-                weight = float(weight_match.group(1).replace(',', '.'))
-            elif "körpergewicht" in details.lower() or "bw" in details.lower():
+            try:
+                # Standardwerte
+                sets = 3
                 weight = 0.0
+                reps = "10"
 
-            reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
-            if reps_match:
-                reps = reps_match.group(1).strip()
+                # Extrahiere Sätze (z.B. "3 Sätze", "4x", "3 sets")
+                sets_match = re.search(r'(\d+)\s*(x|[Ss]ätze|[Ss]ets)', details)
+                if sets_match:
+                    sets = int(sets_match.group(1))
 
-            for satz in range(1, sets + 1):
-                rows.append({
-                    'UserID': user_id, 'Datum': current_date, 'Name': '',
-                    'Workout Name': current_workout, 'Übung': exercise_name,
-                    'Satz-Nr.': satz, 'Gewicht': weight,
-                    'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
-                    'Einheit': 'kg', 'Typ': '', 'Erledigt': 'FALSE',
-                    'Mitteilung an den Trainer': '', 'Hinweis vom Trainer': ''
-                })
-        except Exception as e:
-            st.warning(f"⚠️ Parsing-Fehler bei Übung: '{line}'. Fehler: {e}")
-            continue
+                # Extrahiere Gewicht (z.B. "70kg", "12.5 kg")
+                weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
+                if weight_match:
+                    weight = float(weight_match.group(1).replace(',', '.'))
+                elif "körpergewicht" in details.lower() or "bw" in details.lower():
+                    weight = 0.0
+
+                # Extrahiere Wiederholungen (z.B. "8-10 Wdh", "12 reps")
+                reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
+                if reps_match:
+                    reps = reps_match.group(1).strip()
+
+                # Erstelle eine Zeile für jeden Satz
+                for satz in range(1, sets + 1):
+                    rows.append({
+                        'UserID': user_id, 'Datum': current_date, 'Name': '',
+                        'Workout Name': current_workout, 'Übung': exercise_name,
+                        'Satz-Nr.': satz, 'Gewicht': weight,
+                        'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
+                        'Einheit': 'kg', 'Typ': '', 'Erledigt': 'FALSE',
+                        'Mitteilung an den Trainer': '', 'Hinweis vom Trainer': ''
+                    })
+            except Exception as e:
+                st.warning(f"⚠️ Parsing-Fehler bei Übung: '{line}'. Fehler: {e}")
             
+            continue # Wichtig: Gehe zur nächsten Zeile nach der Verarbeitung
+
+        # PRIORITÄT 2: Wenn es keine Übung ist, ist es ein Workout-Titel?
+        # Ein Titel enthält einen Doppelpunkt, startet aber nicht mit einem Bindestrich.
+        if ":" in line:
+            # Bereinige Markdown (**) und extrahiere den Namen vor dem ersten Doppelpunkt
+            potential_workout_name = line.replace('*', '').split(':', 1)[0].strip()
+            if potential_workout_name:  # Stelle sicher, dass der Name nicht leer ist
+                current_workout = potential_workout_name
+
     return rows
+
 
 # ---- Haupt-App-Logik ----
 if st.session_state.user_data is None:
@@ -387,7 +393,46 @@ with tab1:
 
 # ---- Tab 2: Neue Übung ----
 with tab2:
-    # ... (Code für Tab 2 bleibt unverändert) ...
+    st.subheader("Neue Übung manuell hinzufügen")
+    
+    if df is not None:
+        existing_workouts = list(df['Workout Name'].unique())
+        
+        with st.form("new_exercise_form"):
+            workout_name_option = st.selectbox("Zu welchem Workout hinzufügen?", ["Neues Workout erstellen"] + existing_workouts)
+            
+            if workout_name_option == "Neues Workout erstellen":
+                workout_name = st.text_input("Name des neuen Workouts", placeholder="z.B. Push Day")
+            else:
+                workout_name = workout_name_option
+
+            exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
+            num_sets = st.number_input("Anzahl Sätze", min_value=1, value=3)
+            default_weight = st.number_input("Start-Gewicht (kg)", min_value=0.0, value=20.0, step=2.5)
+            default_reps = st.number_input("Wiederholungen pro Satz", min_value=1, value=10)
+
+            submitted = st.form_submit_button("Übung hinzufügen", type="primary")
+
+            if submitted and exercise_name and workout_name:
+                worksheet = get_main_worksheet()
+                header = worksheet.row_values(1)
+                
+                for satz in range(1, num_sets + 1):
+                    new_row_dict = {
+                        'UserID': st.session_state.userid, 'Datum': datetime.date.today().isoformat(),
+                        'Workout Name': workout_name, 'Übung': exercise_name, 'Satz-Nr.': str(satz),
+                        'Gewicht': str(default_weight), 'Wdh': str(default_reps), 'Erledigt': 'FALSE',
+                        'Einheit': 'kg'
+                    }
+                    row_values = [str(new_row_dict.get(col, '')) for col in header]
+                    st.session_state.rows_to_add.append(row_values)
+                
+                st.session_state.unsaved_changes = True
+                st.success(f"'{exercise_name}' wurde hinzugefügt! Bitte im Training-Tab speichern.")
+                st.rerun()
+    else:
+        st.info("Lade zuerst deine Workouts im 'Training' Tab, um eine Übung hinzuzufügen.")
+
 
 # ---- Tab 3: Neuer Plan ----
 with tab3:
@@ -400,31 +445,52 @@ with tab3:
     with st.expander("Deine Daten für die KI"):
         history_summary = analyze_workout_history(st.session_state.userid)
         st.text_area("Bisherige Leistungen (Zusammenfassung)", value=history_summary, height=150, disabled=True)
-        # ... (Fragebogen-Logik bleibt) ...
+        
+        fragebogen_data = {}
+        gspread_client = get_gspread_client()
+        fragebogen_sheet = get_sheet(gspread_client, FRAGEBOGEN_SHEET)
+        if fragebogen_sheet:
+            try:
+                fb_data = fragebogen_sheet.get_all_records()
+                user_profile = next((r for r in fb_data if str(r.get('UserID')).strip() == st.session_state.userid), {})
+                if user_profile:
+                    st.write("**Dein Profil:**")
+                    st.json({k: v for k, v in user_profile.items() if k != 'UserID' and v})
+                    fragebogen_data = {k: v for k, v in user_profile.items() if k != 'UserID'}
+            except Exception as e:
+                st.warning(f"Fragebogen-Daten konnten nicht geladen werden: {e}")
 
-    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche", placeholder="z.B. Fokus auf Oberkörper...")
+    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche", placeholder="z.B. Fokus auf Oberkörper, mehr Kraftausdauer...")
     
     if st.button("🤖 Plan mit KI generieren", type="primary"):
-        # ... (Prompt-Logik bleibt unverändert) ...
-        prompt = f"""
-        Erstelle einen detaillierten und strukturierten wöchentlichen Trainingsplan.
-        **Benutzerprofil & Ziele:**
-        - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
-        - Hauptziel: {fragebogen_data.get('Ziel', 'Muskelaufbau')}
-        ...
-        **Anweisungen für die KI:**
-        1. Gib jedem Workout einen klaren Namen (z.B. "Tag 1: Push-Training:").
-        2. Formatiere jede Übung als: `- Übungsname: X Sätze, Y Wdh, Z kg`
-        ...
-        """
-        try:
-            response = client.chat.completions.create(model='gpt-4o-mini', messages=[{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000)
-            st.session_state.plan_text = response.choices[0].message.content
-            st.session_state.new_plan_rows = parse_ai_plan_to_rows(st.session_state.plan_text, st.session_state.userid)
-        except Exception as e:
-            st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
-            st.session_state.plan_text = None
-            st.session_state.new_plan_rows = []
+        with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
+            prompt = f"""
+            Erstelle einen detaillierten und strukturierten wöchentlichen Trainingsplan für einen Athleten.
+
+            **Benutzerprofil & Ziele:**
+            - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
+            - Hauptziel: {fragebogen_data.get('Ziel', 'Muskelaufbau')}
+            - Verfügbare Tage pro Woche: {fragebogen_data.get('Verfügbare_Tage', '3')}
+            - Ausrüstung: {fragebogen_data.get('Ausrüstung', 'Fitnessstudio')}
+            - Spezifische Wünsche: {additional_goals or "Allgemeine Fitness verbessern"}
+
+            **Bisherige Leistungen (Zusammenfassung):**
+            {history_summary}
+
+            **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
+            1. Jeder Workout-Tag MUSS mit einem Titel beginnen, der mit einem Doppelpunkt endet. Beispiel: `**Tag 1: Kraft Oberkörper:**`
+            2. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen. Beispiel: `- Bankdrücken: ...`
+            3. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg`
+            4. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
+            """
+            try:
+                response = client.chat.completions.create(model='gpt-4o-mini', messages=[{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000)
+                st.session_state.plan_text = response.choices[0].message.content
+                st.session_state.new_plan_rows = parse_ai_plan_to_rows(st.session_state.plan_text, st.session_state.userid)
+            except Exception as e:
+                st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
+                st.session_state.plan_text = None
+                st.session_state.new_plan_rows = []
 
     if st.session_state.plan_text:
         st.subheader("Vorschau des neuen Plans")
@@ -481,4 +547,4 @@ with tab4:
             st.json({k: v for k, v in st.session_state.items() if k not in ['user_data', 'main_worksheet_cache']})
 
 st.sidebar.info(f"Eingeloggt als: **{st.session_state.userid}**")
-st.sidebar.caption("v10.0 - Robuste Version mit Debugging")
+st.sidebar.caption("v12.0 - IndentationError behoben")

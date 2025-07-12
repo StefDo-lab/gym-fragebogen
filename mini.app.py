@@ -674,3 +674,4 @@ def activate_plan_with_debug(new_rows):
         import traceback
         st.text(traceback.format_exc())
 
+

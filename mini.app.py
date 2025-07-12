@@ -173,13 +173,19 @@ with tab1:
             exercises = workout_data['Übung'].unique()
             
             for exercise in exercises:
-                with st.expander(f"**{exercise}**"):
+                with st.expander(f"**{exercise}**", expanded=True):
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
                     for idx, row in exercise_data.iterrows():
-                        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
-                        
                         row_num = row['_row_num']
+                        
+                        # Trainer-Hinweis anzeigen (wenn vorhanden)
+                        trainer_hint = row.get('Hinweis vom Trainer', '')
+                        if trainer_hint and trainer_hint.strip():
+                            st.info(f"💬 **Trainer-Hinweis:** {trainer_hint}")
+                        
+                        # Hauptzeile mit Satz-Daten
+                        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
                         
                         with col1:
                             st.write(f"**Satz {int(row['Satz-Nr.'])}**")
@@ -190,7 +196,7 @@ with tab1:
                             current_weight = st.session_state.local_changes.get(key, row['Gewicht'])
                             
                             new_weight = st.number_input(
-                                "Gewicht",
+                                "Gewicht (kg)",
                                 value=float(current_weight),
                                 step=2.5,
                                 key=f"w_{row_num}"
@@ -206,7 +212,7 @@ with tab1:
                             current_reps = st.session_state.local_changes.get(key, row['Wdh'])
                             
                             new_reps = st.number_input(
-                                "Wdh",
+                                "Wiederholungen",
                                 value=int(current_reps),
                                 step=1,
                                 key=f"r_{row_num}"
@@ -235,6 +241,34 @@ with tab1:
                                 st.session_state.local_changes[(row_num, 'Wdh')] = new_reps
                                 st.session_state.unsaved_changes = True
                                 st.rerun()
+                        
+                        # Mitteilung an den Trainer
+                        msg_key = (row_num, 'Mitteilung an den Trainer')
+                        current_msg = st.session_state.local_changes.get(msg_key, row.get('Mitteilung an den Trainer', ''))
+                        
+                        new_msg = st.text_area(
+                            "💭 Nachricht an Trainer",
+                            value=current_msg or '',
+                            key=f"msg_{row_num}",
+                            placeholder="z.B. Schulter zwickt leicht, Form war heute super, etc.",
+                            height=60
+                        )
+                        
+                        if new_msg != row.get('Mitteilung an den Trainer', ''):
+                            st.session_state.local_changes[msg_key] = new_msg
+                            st.session_state.unsaved_changes = True
+                        
+                        st.markdown("---")
+                    
+                    # Zusammenfassung am Ende der Übung
+                    completed_sets = sum(1 for _, r in exercise_data.iterrows() 
+                                       if st.session_state.local_changes.get((r['_row_num'], 'Erledigt'), r.get('Erledigt', 'FALSE')) == 'TRUE')
+                    total_sets = len(exercise_data)
+                    
+                    if completed_sets == total_sets:
+                        st.success(f"✅ Alle {total_sets} Sätze erledigt!")
+                    else:
+                        st.caption(f"📊 {completed_sets}/{total_sets} Sätze erledigt")
     else:
         st.info("Klicke auf '📥 Workouts laden' um deine Trainingsdaten zu sehen")
 
@@ -253,7 +287,13 @@ with tab2:
     
     with col2:
         if st.button("🔍 Session State anzeigen"):
-            st.write(st.session_state)
+            st.json(st.session_state)
+    
+    # Zeige ungespeicherte Änderungen
+    if st.session_state.unsaved_changes:
+        st.subheader("Ungespeicherte Änderungen:")
+        for (row, col), value in st.session_state.local_changes.items():
+            st.write(f"Zeile {row}, {col}: {value}")
 
 st.markdown("---")
-st.caption("v6.0 - Workout Anzeige mit Batch-Speicherung")
+st.caption("v6.1 - Mit Trainer-Kommunikation")

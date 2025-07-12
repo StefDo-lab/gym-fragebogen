@@ -184,11 +184,13 @@ if abgeschickt:
             and studio != "Bitte wählen..." and einwilligung):
         st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
     else:
-        # ===== NEU: ID und temporäres Passwort generieren =====
+        # ID und temporäres Passwort generieren
         user_id = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{vorname[:3].upper()}"
         temp_password = f"{nachname[:3].lower()}{geburtsdatum.day:02d}"
-        # Zeile für Google Sheets vorbereiten
+        
+        # Zeile für Google Sheets vorbereiten - MIT user_id als erste Spalte!
         new_row = [
+            user_id,  # <-- WICHTIG: ID als erste Spalte
             vorname, nachname, str(geburtsdatum), email, telefon, geschlecht,
             str(erfassungsdatum), studio, groesse, gewicht, kfa_out, krafttraining,
             ergaenzung, "; ".join(ziele), weitere_ziele, op, op_details,
@@ -211,9 +213,9 @@ if abgeschickt:
         WEBHOOK_URL = "https://hook.eu2.make.com/i8vbdd2xgdif28ym98mhk174wsecx10t"
         
         payload = {
-            "vorname": vorname,
-            "user_id": user_id,  # <-- NEU
+            "user_id": user_id,
             "temp_password": temp_password,
+            "vorname": vorname,
             "nachname": nachname,
             "geburtsdatum": str(geburtsdatum),
             "email": email,
@@ -273,10 +275,10 @@ if abgeschickt:
         st.info(f"""
         📱 **Deine Zugangsdaten für die Trainingsplan-App:**
         
-        **Benutzer-ID:** `{user_id}`  
+        **Benutzer-ID:** `{user_id}`
         **Temporäres Passwort:** `{temp_password}`
         
-        ⚠️ **Wichtig:** Speichere diese Daten oder mache ein Screenshot!  
+        ⚠️ **Wichtig:** Speichere diese Daten oder mache ein Screenshot!
         Du erhältst sie auch per E-Mail an {email}.
         """)
         

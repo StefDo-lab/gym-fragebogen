@@ -209,29 +209,40 @@ def parse_ai_plan_to_rows(plan_text, user_id):
     lines = plan_text.split('\n')
     current_workout = ""
     
+    # Debug-Counter
+    workout_count = 0
+    exercise_count = 0
+    
     for line in lines:
         line = line.strip()
         if not line:
             continue
         
-        # Debug
-        # st.write(f"Verarbeite Zeile: {line}")
+        # Stoppe bei Hinweisen am Ende
+        if "Hinweise:" in line or "**Hinweise:**" in line:
+            break
         
-        # Erkenne Workout-Namen (z.B. "**Tag 1: Push Day - Schulterfokus**")
-        if "Tag" in line and ":" in line:
-            # Extrahiere Workout-Namen
-            if "**" in line:
-                line = line.replace("**", "")
-            parts = line.split(":")
-            if len(parts) >= 2:
-                current_workout = parts[1].strip()
-                continue
+        # Erkenne Workout-Namen
+        if ("Tag" in line and ":" in line) or ("Day" in line and ":" in line):
+            # Entferne Sternchen
+            clean_line = line.replace("**", "").replace("*", "")
+            # Extrahiere alles nach dem ersten Doppelpunkt
+            if ":" in clean_line:
+                parts = clean_line.split(":", 1)
+                if len(parts) > 1:
+                    current_workout = parts[1].strip()
+                    workout_count += 1
+                    continue
         
-        # Erkenne Übungen (beginnen mit "- ")
-        if line.startswith("- "):
+        # Erkenne Übungen
+        if line.startswith("- ") or line.startswith("-"):
             try:
-                # Entferne den Bindestrich
-                exercise_line = line[2:].strip()
+                # Entferne den Bindestrich und Leerzeichen
+                exercise_line = line.lstrip("- ").strip()
+                
+                # Ignoriere leere Zeilen
+                if not exercise_line:
+                    continue
                 
                 # Trenne Übungsname vom Rest
                 if ":" in exercise_line:
@@ -239,33 +250,46 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                     exercise_name = parts[0].strip()
                     details = parts[1].strip() if len(parts) > 1 else ""
                 else:
-                    # Fallback wenn kein Doppelpunkt
-                    exercise_name = exercise_line
-                    details = ""
+                    continue  # Skip wenn kein Doppelpunkt
                 
                 # Defaults
                 sets = 3
                 weight = 0
                 reps = "10"
                 
-                # Extrahiere Details
-                # Suche nach Sätzen
-                sets_match = re.search(r'(\d+)\s*[Ss]ätze', details)
-                if sets_match:
-                    sets = int(sets_match.group(1))
+                # Extrahiere Sätze
+                sets_patterns = [
+                    r'(\d+)\s*[Ss]ätze',
+                    r'(\d+)\s*[Ss]atz',
+                    r'(\d+)\s*[Ss]ets?'
+                ]
+                for pattern in sets_patterns:
+                    match = re.search(pattern, details)
+                    if match:
+                        sets = int(match.group(1))
+                        break
                 
-                # Suche nach Gewicht (kg oder Körpergewicht)
-                weight_match = re.search(r'(\d+(?:,\d+)?)\s*kg', details)
+                # Extrahiere Gewicht
+                weight_match = re.search(r'(\d+(?:[,\.]\d+)?)\s*kg', details)
                 if weight_match:
                     weight_str = weight_match.group(1).replace(',', '.')
                     weight = float(weight_str)
-                elif "Körpergewicht" in details:
-                    weight = 0  # Körpergewicht = 0kg
+                elif any(word in details.lower() for word in ["körpergewicht", "bodyweight", "bw"]):
+                    weight = 0
                 
-                # Suche nach Wiederholungen
-                reps_match = re.search(r'(\d+[-\d]*)\s*[Ww]dh', details)
-                if reps_match:
-                    reps = reps_match.group(1)
+                # Extrahiere Wiederholungen
+                reps_patterns = [
+                    r'(\d+(?:-\d+)?)\s*[Ww]dh',
+                    r'(\d+(?:-\d+)?)\s*[Ww]iederholungen',
+                    r'(\d+(?:-\d+)?)\s*[Rr]eps'
+                ]
+                for pattern in reps_patterns:
+                    match = re.search(pattern, details)
+                    if match:
+                        reps = match.group(1)
+                        break
+                
+                exercise_count += 1
                 
                 # Erstelle Zeilen für jeden Satz
                 for satz in range(1, sets + 1):
@@ -273,7 +297,7 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                         'UserID': user_id,
                         'Datum': current_date.isoformat(),
                         'Name': '',
-                        'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
+                        'Workout Name': current_workout or f"Workout {workout_count}",
                         'Übung': exercise_name,
                         'Satz-Nr.': satz,
                         'Gewicht': weight,
@@ -286,9 +310,13 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                     })
                     
             except Exception as e:
-                st.write(f"Fehler beim Parsen der Zeile: {line}")
+                # Debug-Ausgabe bei Fehler
+                st.write(f"⚠️ Parsing-Fehler bei Zeile: '{line}'")
                 st.write(f"Fehler: {e}")
                 continue
+    
+    # Debug-Zusammenfassung
+    st.write(f"✅ {workout_count} Workouts und {exercise_count} Übungen erkannt")
     
     return rows
 

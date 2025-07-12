@@ -82,30 +82,39 @@ except Exception as e:
     st.error(f"Fehler beim Öffnen der Sheets: {e}")
     st.stop()
 
-# ---- OpenAI Setup ----
+# ---- OpenAI Setup (FIXED) ----
 def get_openai_key():
-    if "openai_api_key" in st.secrets:
-        return st.secrets["openai_api_key"]
+    # Versuche alle möglichen Schreibweisen
+    for key_name in ["openai_api_key", "OPENAI_API_KEY", "OpenAI_API_Key"]:
+        if key_name in st.secrets:
+            return st.secrets[key_name]
+    
+    # Fallback auf Umgebungsvariable
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
         return env_key
+    
     return None
 
 openai_key = get_openai_key()
 
 if not openai_key:
+    st.warning("OpenAI API Key nicht in Secrets gefunden. Bitte manuell eingeben.")
     openai_key = st.text_input(
-        "**API Key fehlt** – bitte OpenAI API Key eingeben (wird nicht gespeichert)", 
+        "**API Key eingeben**", 
         type="password",
         key="openai_key_input"
     )
     if openai_key:
-        st.warning("Key nur temporär genutzt. Für Dauerbetrieb bitte in Secrets speichern.")
+        st.info("Key wird nur für diese Sitzung verwendet.")
     else:
-        st.error("OpenAI API Key nicht gefunden.")
-        st.stop()
+        st.error("Ohne API Key kann kein neuer Plan erstellt werden.")
+        # Nicht stoppen - User kann trotzdem seinen aktuellen Plan sehen
 
-client = OpenAI(api_key=openai_key)
+if openai_key:
+    client = OpenAI(api_key=openai_key)
+else:
+    client = None
 
 # ---- Standard Templates ----
 DEFAULT_PROMPT_TEMPLATE = """
@@ -123,24 +132,31 @@ ${workout_summary}
 ZUSÄTZLICHE WÜNSCHE:
 ${additional_goals}
 
-Erstelle einen Trainingsplan für die nächste Woche basierend auf den bisherigen Leistungen.
+Erstelle einen Trainingsplan für die nächste Woche. Nutze alle verfügbaren Informationen bestmöglich.
 """
 
-DEFAULT_SYSTEM_PROMPT = """Erstelle einen Trainingsplan im folgenden Format:
+DEFAULT_SYSTEM_PROMPT = """Erstelle einen Wochenplan mit eindeutigen Workout-Namen. 
 
-Tag 1 - Oberkörper:
+WICHTIG: Jedes Workout muss einen EINDEUTIGEN Namen haben!
+Beispiele:
+- "Oberkörper A" (nicht nur "Oberkörper")
+- "Push Day 1" (nicht nur "Push Day")
+- "Beine & Po - Schwer" (nicht nur "Beine")
+
+Format:
+Oberkörper A:
 - Bankdrücken: 3 Sätze, 80kg, 8-10 Wdh
 - Rudern: 3 Sätze, 60kg, 10-12 Wdh
 
-Tag 2 - Unterkörper:
+Unterkörper A:
 - Kniebeuge: 4 Sätze, 100kg, 6-8 Wdh
 - Kreuzheben: 3 Sätze, 120kg, 5 Wdh
 
-Wichtig: 
-- Nur 1 Woche planen
-- Klare Struktur
-- Realistische Gewichte basierend auf Historie
-- Maximal 6 Übungen pro Tag"""
+Regeln:
+- Eindeutige Workout-Namen
+- Realistische Gewichte
+- 4-6 Übungen pro Workout
+- Klare Satz/Wdh Angaben"""
 
 # ---- Template Loader ----
 @st.cache_data
@@ -170,7 +186,8 @@ def load_prompt_and_config():
         with open(SYSTEM_PROMPT_PATH, 'w', encoding='utf-8') as f:
             f.write(DEFAULT_SYSTEM_PROMPT)
     
-    return Template(prompt_content), system_content, {'temperature': 0.7, 'max_tokens': 1000}
+    # Erhöhtes Token-Limit für vollständige Pläne
+    return Template(prompt_content), system_content, {'temperature': 0.7, 'max_tokens': 2500}
 
 prompt_template, system_prompt, prompt_config = load_prompt_and_config()
 
@@ -187,7 +204,8 @@ def analyze_workout_history(archive_df, user_id, days=30):
     if archive_df.empty:
         return "Keine historischen Daten vorhanden."
     
-    user_archive = archive_df[archive_df['UserID'] == user_id].copy()
+    # Problem: UserID könnte in verschiedenen Schreibweisen vorkommen
+    user_archive = archive_df[archive_df['UserID'].astype(str).str.strip() == str(user_id).strip()].copy()
     
     if 'Datum' in user_archive.columns:
         try:
@@ -202,16 +220,17 @@ def analyze_workout_history(archive_df, user_id, days=30):
     
     summary = []
     if 'Übung' in user_archive.columns:
-        # Limitiere auf die 10 wichtigsten Übungen
-        top_exercises = user_archive['Übung'].value_counts().head(10).index
+        # Alle relevanten Übungen, keine künstliche Limitierung
+        exercise_counts = user_archive['Übung'].value_counts()
         
-        for exercise in top_exercises:
+        for exercise in exercise_counts.index:
             ex_data = user_archive[user_archive['Übung'] == exercise]
             max_weight = ex_data['Gewicht'].max() if 'Gewicht' in ex_data.columns else 0
             avg_reps = ex_data['Wdh'].mean() if 'Wdh' in ex_data.columns else 0
-            summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh")
+            count = exercise_counts[exercise]
+            summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh, {count}x")
     
-    return "\n".join(summary[:10])  # Maximal 10 Zeilen
+    return "\n".join(summary)
 
 def parse_ai_plan_to_rows(plan_text, user_id):
     """Konvertiert den KI-generierten Plan in Tabellenzeilen"""
@@ -226,10 +245,14 @@ def parse_ai_plan_to_rows(plan_text, user_id):
         if not line:
             continue
             
-        # Erkenne Workout-Namen
-        if 'Tag' in line and ':' in line:
-            current_workout = line.split(':')[0].strip()
-            continue
+        # Erkenne Workout-Namen (flexibler)
+        if ':' in line and not line.startswith('-') and not line.startswith('•'):
+            # Potentieller Workout-Name
+            potential_workout = line.split(':')[0].strip()
+            # Prüfe ob es wie ein Workout-Name aussieht
+            if len(potential_workout) < 50 and not any(char.isdigit() and 'kg' in line for char in line):
+                current_workout = potential_workout
+                continue
         
         # Erkenne Übungen
         if line.startswith('-') or line.startswith('•'):
@@ -262,13 +285,17 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                         rows.append({
                             'UserID': user_id,
                             'Datum': current_date.isoformat(),
+                            'Name': '',  # Neue Spalte
                             'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
                             'Übung': exercise_name,
                             'Satz-Nr.': satz,
                             'Gewicht': weight,
                             'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
+                            'Einheit': 'kg',  # Neue Spalte
+                            'Typ': '',  # Neue Spalte
                             'Erledigt': 'FALSE',
-                            'Status': 'aktiv'
+                            'Mitteilung an den Trainer': '',  # Neue Spalte
+                            'Hinweis vom Trainer': ''  # Neue Spalte
                         })
             except:
                 continue
@@ -304,25 +331,50 @@ st.markdown("""
 
 st.title("Workout Tracker")
 
-# Login
+# Login mit Debug
 if 'userid' not in st.session_state:
     st.session_state.userid = None
 
 if not st.session_state.userid:
     uid = st.text_input("UserID", type="password")
+    
+    # Debug-Modus
+    if st.checkbox("Debug-Modus"):
+        header = get_header_row(ws_current)
+        st.write("Header-Spalten:", header)
+        if "UserID" in header:
+            uid_col = header.index("UserID")
+            all_values = ws_current.get_all_values()
+            valid_ids = [row[uid_col] for row in all_values[1:] if len(row) > uid_col and row[uid_col]]
+            st.write("Gefundene UserIDs:", valid_ids[:5], "...")  # Zeige nur erste 5
+    
     if st.button("Login"):
         header = get_header_row(ws_current)
         try:
-            uid_col = header.index("UserID") + 1
+            # Finde erste UserID Spalte (es gibt offenbar zwei)
+            uid_col = header.index("UserID")
             all_values = ws_current.get_all_values()
-            valid_ids = list(set([row[uid_col-1] for row in all_values[1:] if len(row) > uid_col-1 and row[uid_col-1]]))
             
-            if uid in valid_ids:
-                st.session_state.userid = uid
-                st.success(f"Eingeloggt als {uid}")
+            # Sammle alle UserIDs (bereinigt)
+            valid_ids = []
+            for row in all_values[1:]:
+                if len(row) > uid_col and row[uid_col]:
+                    clean_id = str(row[uid_col]).strip()
+                    if clean_id and clean_id not in valid_ids:
+                        valid_ids.append(clean_id)
+            
+            # Bereinige eingegebene ID
+            clean_uid = uid.strip()
+            
+            if clean_uid in valid_ids:
+                st.session_state.userid = clean_uid
+                st.success(f"Eingeloggt als {clean_uid}")
                 st.rerun()
             else:
-                st.error("Ungültige UserID.")
+                st.error(f"UserID '{clean_uid}' nicht gefunden.")
+                
+        except ValueError:
+            st.error("Spalte 'UserID' nicht gefunden im Header.")
         except Exception as e:
             st.error(f"Login-Fehler: {e}")
     st.stop()
@@ -345,17 +397,20 @@ with tab1:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
+            # Bereinige UserID
             if 'UserID' in df.columns:
-                df['UserID'] = df['UserID'].astype(str)
+                df['UserID'] = df['UserID'].astype(str).str.strip()
             
             return df
-        except:
+        except Exception as e:
+            st.error(f"Fehler beim Laden: {e}")
             return pd.DataFrame()
     
     current_df = load_current_plan()
     
     if not current_df.empty:
-        user_plan = current_df[current_df['UserID'] == st.session_state.userid]
+        # Bereinige UserID für Vergleich
+        user_plan = current_df[current_df['UserID'] == st.session_state.userid.strip()]
         
         if not user_plan.empty:
             # Gruppiere nach Workout
@@ -401,8 +456,8 @@ with tab1:
                                 )
                             
                             with col4:
-                                erledigt = row.get('Erledigt', False)
-                                if erledigt in [True, 'TRUE', 'true', 1]:
+                                erledigt = str(row.get('Erledigt', 'FALSE')).upper()
+                                if erledigt == 'TRUE':
                                     if st.button("✓ Erledigt", key=f"undo_{idx}", help="Als nicht erledigt markieren", type="primary"):
                                         # Update: nicht erledigt
                                         row_num = idx + 2
@@ -422,7 +477,7 @@ with tab1:
                         # Optionen am Ende der Übung
                         col1, col2 = st.columns(2)
                         with col1:
-                            if st.button(f"+ Satz hinzufügen", key=f"add_set_{exercise}"):
+                            if st.button(f"+ Satz hinzufügen", key=f"add_set_{exercise}_{workout}"):
                                 # Füge neuen Satz hinzu
                                 last_set = exercise_data.iloc[-1]
                                 new_row = last_set.to_dict()
@@ -441,7 +496,7 @@ with tab1:
                                 st.rerun()
                         
                         with col2:
-                            if st.button(f"Übung löschen", key=f"del_ex_{exercise}"):
+                            if st.button(f"Übung löschen", key=f"del_ex_{exercise}_{workout}"):
                                 # Lösche alle Sätze dieser Übung
                                 for del_idx in sorted(exercise_data.index, reverse=True):
                                     ws_current.delete_rows(del_idx + 2)
@@ -484,8 +539,8 @@ with tab1:
                                     new_row[i] = str(new_reps)
                                 elif col_name == 'Erledigt':
                                     new_row[i] = 'FALSE'
-                                elif col_name == 'Status':
-                                    new_row[i] = 'aktiv'
+                                elif col_name == 'Einheit':
+                                    new_row[i] = 'kg'
                             ws_current.append_row(new_row)
                         st.success(f"'{new_exercise}' wurde hinzugefügt!")
                         st.cache_data.clear()
@@ -499,6 +554,10 @@ with tab1:
 with tab2:
     st.header("Neuen Trainingsplan erstellen")
     
+    if not client:
+        st.error("OpenAI API Key fehlt. Bitte oben eingeben.")
+        st.stop()
+    
     # Lade Archivdaten
     archive_data = pd.DataFrame()
     if ws_archive:
@@ -509,6 +568,9 @@ with tab2:
                 for col in ["Gewicht", "Wdh"]:
                     if col in archive_data.columns:
                         archive_data[col] = pd.to_numeric(archive_data[col], errors='coerce').fillna(0)
+                # Bereinige UserID
+                if 'UserID' in archive_data.columns:
+                    archive_data['UserID'] = archive_data['UserID'].astype(str).str.strip()
         except:
             pass
     
@@ -528,10 +590,10 @@ with tab2:
                 fragebogen_data = {}
                 if ws_fragebogen:
                     fb_records = ws_fragebogen.get_all_records()
-                    user_profile = next((r for r in fb_records if r.get('UserID') == st.session_state.userid), {})
+                    user_profile = next((r for r in fb_records if str(r.get('UserID')).strip() == st.session_state.userid), {})
                     fragebogen_data = {k: v for k, v in user_profile.items() if k != 'UserID'}
                 
-                # Analysiere Historie (kompakt)
+                # Analysiere Historie
                 workout_summary = analyze_workout_history(archive_data, st.session_state.userid) if not archive_data.empty else "Keine Daten"
                 
                 # Template-Daten
@@ -546,7 +608,7 @@ with tab2:
                 
                 prompt = prompt_template.safe_substitute(template_data)
                 
-                # OpenAI API Aufruf mit reduziertem Token-Limit
+                # OpenAI API Aufruf
                 response = client.chat.completions.create(
                     model='gpt-4o-mini',
                     messages=[
@@ -554,7 +616,7 @@ with tab2:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=prompt_config.get('temperature', 0.7),
-                    max_tokens=prompt_config.get('max_tokens', 1000)  # Reduziert
+                    max_tokens=prompt_config.get('max_tokens', 2500)
                 )
                 
                 plan_text = response.choices[0].message.content
@@ -618,18 +680,17 @@ with tab3:
     
     if ws_plan_history:
         history_records = ws_plan_history.get_all_records()
-        user_history = [r for r in history_records if r.get('UserID') == st.session_state.userid]
+        user_history = [r for r in history_records if str(r.get('UserID')).strip() == st.session_state.userid]
         
         if user_history:
             user_history.sort(key=lambda x: x.get('Datum', ''), reverse=True)
             
-            for plan in user_history[:10]:  # Zeige nur die letzten 10
+            for plan in user_history[:10]:
                 with st.expander(f"{plan.get('Plan_Name', 'Plan')} - {plan.get('Datum', '')}"):
                     plan_data = plan.get('Plan_Daten', '')
                     try:
                         if plan_data.startswith('[') or plan_data.startswith('{'):
                             data = json.loads(plan_data)
-                            # Zeige strukturiert
                             if isinstance(data, list):
                                 exercises = {}
                                 for item in data:
@@ -652,4 +713,4 @@ with tab3:
             st.info("Noch keine Historie vorhanden.")
 
 st.markdown("---")
-st.caption("v3.0 - Mobile optimiert")
+st.caption("v3.1 - Fixes für neue Spaltenstruktur")

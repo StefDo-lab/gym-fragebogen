@@ -82,27 +82,16 @@ except Exception as e:
     st.error(f"Fehler beim Öffnen der Sheets: {e}")
     st.stop()
 
-# ---- OpenAI Setup mit Debug ----
+# ---- OpenAI Setup ----
 def get_openai_key():
-    # Debug: Zeige verfügbare Secrets
-    if hasattr(st, 'secrets'):
-        available_keys = list(st.secrets.keys())
-        # Zeige Debug nur im Sidebar
-        with st.sidebar:
-            st.write("Debug - Verfügbare Secrets:", available_keys)
-    
     # Versuche verschiedene Schreibweisen
     for key_name in ["openai_api_key", "OPENAI_API_KEY", "OpenAI_API_Key", "openai_key"]:
         if hasattr(st, 'secrets') and key_name in st.secrets:
-            with st.sidebar:
-                st.success(f"✓ API Key gefunden: {key_name}")
             return st.secrets[key_name]
     
     # Fallback auf Umgebungsvariable
     env_key = os.getenv("OPENAI_API_KEY")
     if env_key:
-        with st.sidebar:
-            st.info("API Key aus Umgebungsvariable")
         return env_key
     
     return None
@@ -205,6 +194,14 @@ def get_header_row(worksheet):
         return all_values[0] if all_values else []
     except:
         return []
+
+def col_letter(col_num):
+    """Konvertiert Spaltennummer zu Buchstaben (1=A, 2=B, etc.)"""
+    letter = ''
+    while col_num > 0:
+        col_num, remainder = divmod(col_num - 1, 26)
+        letter = chr(65 + remainder) + letter
+    return letter
 
 def analyze_workout_history(archive_df, user_id, days=30):
     """Analysiert die Workout-Historie und erstellt eine Zusammenfassung"""
@@ -412,8 +409,19 @@ with tab1:
                 for exercise in exercises:
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
-                    # Übung als Expander
-                    with st.expander(f"{exercise}", expanded=False):
+                    # Speichere Expander-Status
+                    expander_key = f"expanded_{exercise}_{workout}"
+                    if expander_key not in st.session_state:
+                        st.session_state[expander_key] = False
+                    
+                    # Übung als Expander mit gespeichertem Status
+                    with st.expander(f"{exercise}", expanded=st.session_state[expander_key]):
+                        # Pin-Button um Expander offen zu halten
+                        if st.button("📌 Offen halten" if not st.session_state[expander_key] else "📌 Schließen", 
+                                    key=f"pin_{exercise}_{workout}"):
+                            st.session_state[expander_key] = not st.session_state[expander_key]
+                            st.rerun()
+                        
                         # Zeige alle Sätze dieser Übung
                         for idx, row in exercise_data.iterrows():
                             st.markdown("---")
@@ -465,11 +473,49 @@ with tab1:
                                 else:
                                     if st.button("Erledigt", key=f"done_{idx}"):
                                         row_num = idx + 2
-                                        ws_current.update_cell(row_num, current_df.columns.get_loc('Gewicht') + 1, new_weight)
-                                        ws_current.update_cell(row_num, current_df.columns.get_loc('Wdh') + 1, new_reps)
-                                        ws_current.update_cell(row_num, current_df.columns.get_loc('Erledigt') + 1, 'TRUE')
-                                        st.cache_data.clear()
-                                        st.rerun()
+                                        
+                                        # Batch Update für bessere Performance
+                                        try:
+                                            batch_data = []
+                                            
+                                            # Gewicht Update
+                                            gewicht_col = col_letter(current_df.columns.get_loc('Gewicht') + 1)
+                                            batch_data.append({
+                                                'range': f'{gewicht_col}{row_num}',
+                                                'values': [[str(new_weight)]]
+                                            })
+                                            
+                                            # Wiederholungen Update
+                                            wdh_col = col_letter(current_df.columns.get_loc('Wdh') + 1)
+                                            batch_data.append({
+                                                'range': f'{wdh_col}{row_num}',
+                                                'values': [[str(new_reps)]]
+                                            })
+                                            
+                                            # Erledigt Update
+                                            erledigt_col = col_letter(current_df.columns.get_loc('Erledigt') + 1)
+                                            batch_data.append({
+                                                'range': f'{erledigt_col}{row_num}',
+                                                'values': [['TRUE']]
+                                            })
+                                            
+                                            # Führe Batch Update aus
+                                            ws_current.batch_update(batch_data)
+                                            
+                                            # Behalte Expander offen
+                                            st.session_state[expander_key] = True
+                                            
+                                            st.cache_data.clear()
+                                            st.rerun()
+                                            
+                                        except Exception as e:
+                                            st.error(f"Update-Fehler: {e}")
+                                            # Fallback auf einzelne Updates
+                                            ws_current.update_cell(row_num, current_df.columns.get_loc('Gewicht') + 1, new_weight)
+                                            ws_current.update_cell(row_num, current_df.columns.get_loc('Wdh') + 1, new_reps)
+                                            ws_current.update_cell(row_num, current_df.columns.get_loc('Erledigt') + 1, 'TRUE')
+                                            st.cache_data.clear()
+                                            st.rerun()
                             
                             with col5:
                                 if st.button("🗑️", key=f"del_set_{idx}", help="Satz löschen"):
@@ -731,4 +777,4 @@ with tab3:
             st.info("Noch keine Historie vorhanden.")
 
 st.markdown("---")
-st.caption("v3.2 - Mit allen Fixes")
+st.caption("v3.3 - Optimiert für weniger API Requests")

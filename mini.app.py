@@ -234,26 +234,39 @@ def parse_ai_plan_to_rows(plan_text, user_id):
         if not line or "hinweise:" in line.lower() or "wichtig:" in line.lower():
             continue
 
+        # Priorität 1: Ist die Zeile eine Übung?
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
             details = exercise_match.group(2).strip()
             
             try:
+                # Standardwerte
                 sets = 3
                 weight = 0.0
                 reps = "10"
+                explanation = ""
 
+                # Extrahiere Erklärung
+                explanation_match = re.search(r'\((Erklärung|Fokus):\s*(.+?)\)', details)
+                if explanation_match:
+                    explanation = explanation_match.group(2).strip()
+                    # Entferne die Erklärung aus den Details, um das weitere Parsen nicht zu stören
+                    details = details.replace(explanation_match.group(0), '').strip()
+
+                # Extrahiere Sätze
                 sets_match = re.search(r'(\d+)\s*(x|[Ss]ätze|[Ss]ets)', details)
                 if sets_match:
                     sets = int(sets_match.group(1))
 
+                # Extrahiere Gewicht
                 weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
                 if weight_match:
                     weight = float(weight_match.group(1).replace(',', '.'))
                 elif "körpergewicht" in details.lower() or "bw" in details.lower():
                     weight = 0.0
 
+                # Extrahiere Wiederholungen
                 reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match:
                     reps = reps_match.group(1).strip()
@@ -265,13 +278,14 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                         'Satz-Nr.': satz, 'Gewicht': weight,
                         'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
                         'Einheit': 'kg', 'Typ': '', 'Erledigt': 'FALSE',
-                        'Mitteilung an den Trainer': '', 'Hinweis vom Trainer': ''
+                        'Mitteilung an den Trainer': '', 'Hinweis vom Trainer': explanation
                     })
             except Exception as e:
                 st.warning(f"⚠️ Parsing-Fehler bei Übung: '{line}'. Fehler: {e}")
             
             continue
 
+        # Priorität 2: Wenn es keine Übung ist, ist es ein Workout-Titel?
         if ":" in line:
             potential_workout_name = line.replace('*', '').split(':', 1)[0].strip()
             if potential_workout_name:
@@ -318,9 +332,10 @@ with tab1:
                 with st.expander(f"**{exercise}**", expanded=False):
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
+                    # Zeige den Hinweis (jetzt mit Erklärung) nur einmal pro Übung an
                     trainer_hint = exercise_data.iloc[0].get('Hinweis vom Trainer', '')
                     if trainer_hint and trainer_hint.strip():
-                        st.info(f"💬 **Trainer-Hinweis:** {trainer_hint}")
+                        st.info(f"💡 **Fokus:** {trainer_hint}")
                     
                     for _, row in exercise_data.iterrows():
                         row_num = row['_row_num']
@@ -448,7 +463,7 @@ with tab3:
         else:
             st.warning("Kein Fragebogen-Sheet gefunden. Es werden Standardwerte verwendet.")
 
-    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche:", placeholder="z.B. Fokus auf Oberkörper...")
+    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche:", placeholder="z.B. Fokus auf Oberkörper, 3er-Split Push/Pull/Beine...")
     
     if st.button("🤖 Plan mit KI generieren", type="primary"):
         prompt = f"""
@@ -465,10 +480,11 @@ with tab3:
         {history_summary}
 
         **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
-        1. Jeder Workout-Tag MUSS mit einem Titel beginnen, der mit einem Doppelpunkt endet. Beispiel: `**Tag 1: Kraft Oberkörper:**`
-        2. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen. Beispiel: `- Bankdrücken: ...`
-        3. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg`
-        4. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
+        1. Jeder Workout-Tag MUSS mit einem Titel beginnen, der mit einem Doppelpunkt endet. Beispiel: `**Tag 1: Push Day:**`
+        2. Berücksichtige explizit den Wunsch nach einem bestimmten Split (z.B. Push/Pull/Beine), falls in den Wünschen angegeben.
+        3. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen.
+        4. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
+        5. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
         """
         with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
             try:

@@ -196,7 +196,7 @@ def analyze_workout_history(user_id, days=30):
             avg_reps = ex_data['Wdh'].mean() if 'Wdh' in ex_data else 0
             summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
         
-        return "\n".join(summary[:10])  # Top 10 Übungen
+        return "\n".join(summary[:10])
         
     except:
         return "Fehler beim Laden der Historie."
@@ -214,7 +214,7 @@ def parse_ai_plan_to_rows(plan_text, user_id):
         if not line:
             continue
         
-        # Erkenne Workout-Namen (z.B. "Oberkörper A:")
+        # Erkenne Workout-Namen
         if ':' in line and not line.startswith('-') and not line.startswith('•'):
             potential_workout = line.split(':')[0].strip()
             if len(potential_workout) < 50 and not any(char.isdigit() and 'kg' in line for char in line):
@@ -362,19 +362,17 @@ with tab1:
                             current_status = st.session_state.local_changes.get(key, row.get('Erledigt', 'FALSE'))
                             
                             if current_status == 'TRUE':
-                                btn_label = "✓"
-                                btn_type = "primary"
+                                if st.button("✓ Erledigt", key=f"done_{row_num}", type="primary"):
+                                    st.session_state.local_changes[key] = 'FALSE'
+                                    st.session_state.unsaved_changes = True
+                                    st.rerun()
                             else:
-                                btn_label = "○"
-                                btn_type = "secondary"
-                            
-                            if st.button(btn_label, key=f"done_{row_num}", type=btn_type):
-                                new_status = 'FALSE' if current_status == 'TRUE' else 'TRUE'
-                                st.session_state.local_changes[key] = new_status
-                                st.session_state.local_changes[(row_num, 'Gewicht')] = new_weight
-                                st.session_state.local_changes[(row_num, 'Wdh')] = new_reps
-                                st.session_state.unsaved_changes = True
-                                st.rerun()
+                                if st.button("Erledigt", key=f"done_{row_num}"):
+                                    st.session_state.local_changes[key] = 'TRUE'
+                                    st.session_state.local_changes[(row_num, 'Gewicht')] = new_weight
+                                    st.session_state.local_changes[(row_num, 'Wdh')] = new_reps
+                                    st.session_state.unsaved_changes = True
+                                    st.rerun()
                         
                         with col5:
                             if st.button("🗑️", key=f"del_{row_num}", help="Satz löschen"):
@@ -409,7 +407,6 @@ with tab1:
                     
                     with col2:
                         if st.button(f"🗑️ Übung", key=f"del_ex_{exercise}_{workout}"):
-                            # Lösche alle Sätze dieser Übung
                             for _, row in exercise_data.iterrows():
                                 if row['_row_num'] not in st.session_state.rows_to_delete:
                                     st.session_state.rows_to_delete.append(row['_row_num'])
@@ -593,41 +590,51 @@ with tab3:
                 with st.expander("📋 Plan-Vorschau", expanded=True):
                     st.text(plan_text)
                 
-                # Plan aktivieren Button
-                if st.button("✅ Plan aktivieren und in Google Sheets speichern"):
-                    # Parse Plan
-                    new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
+                # Parse Plan direkt
+                new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
+                
+                if new_rows:
+                    st.info(f"Plan enthält {len(new_rows)} Sätze")
                     
-                    if new_rows:
+                    # Plan aktivieren Button
+                    if st.button("✅ Plan aktivieren und in Google Sheets speichern", type="primary"):
                         worksheet = get_worksheet()
                         header = worksheet.row_values(1)
                         
                         # Lösche alte Einträge des Users
-                        if st.session_state.user_data is not None:
-                            old_rows = st.session_state.user_data['_row_num'].tolist()
-                            for row_num in sorted(old_rows, reverse=True):
+                        with st.spinner("Lösche alte Einträge..."):
+                            all_data = worksheet.get_all_values()
+                            rows_to_delete = []
+                            for i, row in enumerate(all_data[1:], 2):
+                                if row[header.index("UserID")] == st.session_state.userid:
+                                    rows_to_delete.append(i)
+                            
+                            for row_num in sorted(rows_to_delete, reverse=True):
                                 worksheet.delete_rows(row_num)
                         
                         # Füge neue Zeilen ein
-                        for row_data in new_rows:
-                            new_row = [''] * len(header)
-                            for i, col_name in enumerate(header):
-                                if col_name in row_data:
-                                    new_row[i] = str(row_data[col_name])
-                            worksheet.append_row(new_row)
+                        with st.spinner("Füge neuen Plan ein..."):
+                            for row_data in new_rows:
+                                new_row = [''] * len(header)
+                                for i, col_name in enumerate(header):
+                                    if col_name in row_data:
+                                        new_row[i] = str(row_data[col_name])
+                                worksheet.append_row(new_row)
+                                time.sleep(0.1)  # Kleine Pause zwischen Zeilen
                         
                         st.success("✅ Neuer Plan wurde aktiviert!")
                         st.balloons()
                         
                         # Clear cache
                         st.session_state.user_data = None
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("Fehler beim Parsen des Plans")
+                        st.info("Gehe zum 'Training' Tab und lade deine Workouts neu!")
+                else:
+                    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
                         
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")
+                st.write("Debug Info:")
+                st.write(e)
 
 # ---- Tab 4: Daten Management ----
 with tab4:
@@ -650,4 +657,4 @@ with tab4:
             st.json({k: v for k, v in st.session_state.items() if k != 'user_data'})
 
 st.markdown("---")
-st.caption("v8.0 - Vollständige Version mit KI-Planerstellung")
+st.caption("v8.1 - Mit funktionierender KI-Planerstellung")

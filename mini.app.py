@@ -214,57 +214,80 @@ def parse_ai_plan_to_rows(plan_text, user_id):
         if not line:
             continue
         
-        # Erkenne Workout-Namen
-        if ':' in line and not line.startswith('-') and not line.startswith('•'):
-            potential_workout = line.split(':')[0].strip()
-            if len(potential_workout) < 50 and not any(char.isdigit() and 'kg' in line for char in line):
-                current_workout = potential_workout
+        # Debug
+        # st.write(f"Verarbeite Zeile: {line}")
+        
+        # Erkenne Workout-Namen (z.B. "**Tag 1: Push Day - Schulterfokus**")
+        if "Tag" in line and ":" in line:
+            # Extrahiere Workout-Namen
+            if "**" in line:
+                line = line.replace("**", "")
+            parts = line.split(":")
+            if len(parts) >= 2:
+                current_workout = parts[1].strip()
                 continue
         
-        # Erkenne Übungen
-        if line.startswith('-') or line.startswith('•'):
+        # Erkenne Übungen (beginnen mit "- ")
+        if line.startswith("- "):
             try:
-                parts = line[1:].strip().split(':')
-                if len(parts) >= 2:
+                # Entferne den Bindestrich
+                exercise_line = line[2:].strip()
+                
+                # Trenne Übungsname vom Rest
+                if ":" in exercise_line:
+                    parts = exercise_line.split(":", 1)
                     exercise_name = parts[0].strip()
-                    details = parts[1].strip()
+                    details = parts[1].strip() if len(parts) > 1 else ""
+                else:
+                    # Fallback wenn kein Doppelpunkt
+                    exercise_name = exercise_line
+                    details = ""
+                
+                # Defaults
+                sets = 3
+                weight = 0
+                reps = "10"
+                
+                # Extrahiere Details
+                # Suche nach Sätzen
+                sets_match = re.search(r'(\d+)\s*[Ss]ätze', details)
+                if sets_match:
+                    sets = int(sets_match.group(1))
+                
+                # Suche nach Gewicht (kg oder Körpergewicht)
+                weight_match = re.search(r'(\d+(?:,\d+)?)\s*kg', details)
+                if weight_match:
+                    weight_str = weight_match.group(1).replace(',', '.')
+                    weight = float(weight_str)
+                elif "Körpergewicht" in details:
+                    weight = 0  # Körpergewicht = 0kg
+                
+                # Suche nach Wiederholungen
+                reps_match = re.search(r'(\d+[-\d]*)\s*[Ww]dh', details)
+                if reps_match:
+                    reps = reps_match.group(1)
+                
+                # Erstelle Zeilen für jeden Satz
+                for satz in range(1, sets + 1):
+                    rows.append({
+                        'UserID': user_id,
+                        'Datum': current_date.isoformat(),
+                        'Name': '',
+                        'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
+                        'Übung': exercise_name,
+                        'Satz-Nr.': satz,
+                        'Gewicht': weight,
+                        'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
+                        'Einheit': 'kg',
+                        'Typ': '',
+                        'Erledigt': 'FALSE',
+                        'Mitteilung an den Trainer': '',
+                        'Hinweis vom Trainer': ''
+                    })
                     
-                    # Defaults
-                    sets = 3
-                    weight = 0
-                    reps = "10"
-                    
-                    # Extrahiere Details
-                    sets_match = re.search(r'(\d+)\s*[Ss]ätze', details)
-                    if sets_match:
-                        sets = int(sets_match.group(1))
-                    
-                    weight_match = re.search(r'(\d+)\s*kg', details)
-                    if weight_match:
-                        weight = int(weight_match.group(1))
-                    
-                    reps_match = re.search(r'(\d+[-\d]*)\s*[Ww]dh', details)
-                    if reps_match:
-                        reps = reps_match.group(1)
-                    
-                    # Erstelle Zeilen für jeden Satz
-                    for satz in range(1, sets + 1):
-                        rows.append({
-                            'UserID': user_id,
-                            'Datum': current_date.isoformat(),
-                            'Name': '',
-                            'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
-                            'Übung': exercise_name,
-                            'Satz-Nr.': satz,
-                            'Gewicht': weight,
-                            'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
-                            'Einheit': 'kg',
-                            'Typ': '',
-                            'Erledigt': 'FALSE',
-                            'Mitteilung an den Trainer': '',
-                            'Hinweis vom Trainer': ''
-                        })
-            except:
+            except Exception as e:
+                st.write(f"Fehler beim Parsen der Zeile: {line}")
+                st.write(f"Fehler: {e}")
                 continue
     
     return rows

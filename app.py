@@ -10,6 +10,37 @@ import json
 import os
 import re
 import traceback
+# Füge am Anfang nach den Imports ein:
+import time
+
+# Ändere die open_sheets() Funktion:
+def open_sheets():
+    try:
+        client = get_gspread_client()
+        ss = client.open(SHEET_NAME)
+        
+        # Warte kurz zwischen Requests
+        time.sleep(0.5)
+        
+        all_titles = [sh.title for sh in ss.worksheets()]
+        sheets = {}
+        
+        # Nur die wichtigsten Sheets laden
+        sheets['current_plan'] = ss.worksheet(WORKSHEET_NAME)
+        
+        # Andere Sheets lazy laden (nur wenn benötigt)
+        sheets['archive'] = None
+        sheets['fragebogen'] = None  
+        sheets['plan_history'] = None
+        
+        return sheets, all_titles
+        
+    except Exception as e:
+        if "quota" in str(e).lower():
+            st.error("⏳ Google Sheets Limit erreicht. Bitte 1 Minute warten und Seite neu laden.")
+            st.stop()
+        else:
+            raise e
 
 # ---- Konfiguration ----
 SHEET_NAME = "Workout Tabelle"

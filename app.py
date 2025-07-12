@@ -32,64 +32,20 @@ def get_gspread_client():
     )
     return gspread.authorize(creds)
 
-def open_sheets():
+@st.cache_resource
+def get_worksheet(sheet_name, worksheet_name):
+    """Cached worksheet getter - wird nur einmal geladen"""
     try:
         client = get_gspread_client()
-        ss = client.open(SHEET_NAME)
-        
-        # Minimale Sheet-Initialisierung
-        sheets = {
-            'current_plan': ss.worksheet(WORKSHEET_NAME),
-            'archive': None,
-            'fragebogen': None,
-            'plan_history': None
-        }
-        
-        return sheets
-        
+        ss = client.open(sheet_name)
+        return ss.worksheet(worksheet_name)
     except Exception as e:
         if "quota" in str(e).lower():
-            st.error("⏳ Google Sheets Limit erreicht. Bitte 1 Minute warten und Seite neu laden.")
-            st.stop()
-        else:
-            st.error(f"Fehler beim Öffnen der Sheets: {e}")
-            st.stop()
-
-# Lazy Loading für andere Sheets
-def get_archive_sheet():
-    if 'archive_sheet' not in st.session_state:
-        try:
-            client = get_gspread_client()
-            ss = client.open(SHEET_NAME)
-            st.session_state.archive_sheet = ss.worksheet(ARCHIVE_SHEET)
-        except:
-            st.session_state.archive_sheet = None
-    return st.session_state.archive_sheet
-
-def get_fragebogen_sheet():
-    if 'fragebogen_sheet' not in st.session_state:
-        try:
-            client = get_gspread_client()
-            ss = client.open(SHEET_NAME)
-            st.session_state.fragebogen_sheet = ss.worksheet(FRAGEBOGEN_SHEET)
-        except:
-            st.session_state.fragebogen_sheet = None
-    return st.session_state.fragebogen_sheet
-
-def get_plan_history_sheet():
-    if 'plan_history_sheet' not in st.session_state:
-        try:
-            client = get_gspread_client()
-            ss = client.open(SHEET_NAME)
-            st.session_state.plan_history_sheet = ss.worksheet(PLAN_HISTORY_SHEET)
-        except:
-            st.session_state.plan_history_sheet = None
-    return st.session_state.plan_history_sheet
+            return None
+        raise e
 
 # ---- OpenAI Setup ----
-# Vereinfachte Version - nur aus secrets
 openai_key = st.secrets.get("openai_api_key", None)
-
 if openai_key:
     client = OpenAI(api_key=openai_key)
 else:
@@ -165,9 +121,14 @@ def col_letter(col_num):
         letter = chr(65 + remainder) + letter
     return letter
 
-def load_user_data(worksheet, user_id):
-    """Lädt nur Daten für einen spezifischen User"""
+@st.cache_data(ttl=300)  # Cache für 5 Minuten
+def load_user_data(user_id):
+    """Lädt nur Daten für einen spezifischen User - mit Cache"""
     try:
+        worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
+        if not worksheet:
+            return pd.DataFrame()
+        
         # Hole Header
         header = worksheet.row_values(1)
         if not header:
@@ -199,12 +160,14 @@ def load_user_data(worksheet, user_id):
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
+        # Füge Index-Spalte für Referenz hinzu
+        df['_row_index'] = range(len(user_rows))
+        
         return df
         
     except Exception as e:
         if "quota" in str(e).lower():
-            st.error("⏳ API Limit erreicht. Bitte warten...")
-            return pd.DataFrame()
+            return None  # Signalisiert Quota-Error
         st.error(f"Fehler beim Laden der Daten: {e}")
         return pd.DataFrame()
 
@@ -214,6 +177,8 @@ def init_session_state():
         st.session_state.local_changes = {}
     if 'unsaved_changes' not in st.session_state:
         st.session_state.unsaved_changes = False
+    if 'data_loaded' not in st.session_state:
+        st.session_state.data_loaded = False
 
 def track_change(row_id, field, value):
     """Speichert Änderungen lokal"""
@@ -228,34 +193,53 @@ def get_value(row_id, field, default):
         return st.session_state.local_changes[row_id][field]
     return default
 
-def save_all_changes(worksheet, current_df):
+def save_all_changes(current_df):
     """Speichert alle lokalen Änderungen in einem Batch"""
     if not st.session_state.local_changes:
         return True
     
     try:
+        worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
+        if not worksheet:
+            st.error("Kann nicht auf Google Sheets zugreifen")
+            return False
+        
         batch_data = []
         header = current_df.columns.tolist()
         
+        # Finde die tatsächlichen Zeilennummern
+        all_values = worksheet.get_all_values()
+        uid_col = header.index("UserID")
+        
+        # Erstelle Mapping von DataFrame Index zu Sheet Zeile
+        row_mapping = {}
+        sheet_row = 2  # Start nach Header
+        for i, row in enumerate(all_values[1:]):
+            if len(row) > uid_col and row[uid_col] == st.session_state.userid:
+                if len(row_mapping) < len(current_df):
+                    row_mapping[len(row_mapping)] = sheet_row
+            sheet_row += 1
+        
         for row_id, changes in st.session_state.local_changes.items():
-            row_num = row_id + 2  # +1 für 0-Index, +1 für Header
-            
-            for field, value in changes.items():
-                if field in header:
-                    col_num = header.index(field) + 1
-                    col_let = col_letter(col_num)
-                    batch_data.append({
-                        'range': f'{col_let}{row_num}',
-                        'values': [[str(value)]]
-                    })
+            if row_id in row_mapping:
+                sheet_row = row_mapping[row_id]
+                
+                for field, value in changes.items():
+                    if field in header and field != '_row_index':
+                        col_num = header.index(field) + 1
+                        col_let = col_letter(col_num)
+                        batch_data.append({
+                            'range': f'{col_let}{sheet_row}',
+                            'values': [[str(value)]]
+                        })
         
         # Führe Batch Update aus
         if batch_data:
-            # Teile in kleinere Batches auf (max 100 Updates pro Request)
-            for i in range(0, len(batch_data), 100):
-                batch_chunk = batch_data[i:i+100]
+            # Teile in kleinere Batches auf
+            for i in range(0, len(batch_data), 50):  # Kleinere Batches
+                batch_chunk = batch_data[i:i+50]
                 worksheet.batch_update(batch_chunk)
-                time.sleep(0.5)  # Kleine Pause zwischen Batches
+                time.sleep(1)  # Längere Pause
         
         # Clear lokale Änderungen
         st.session_state.local_changes = {}
@@ -263,7 +247,10 @@ def save_all_changes(worksheet, current_df):
         return True
         
     except Exception as e:
-        st.error(f"Fehler beim Speichern: {e}")
+        if "quota" in str(e).lower():
+            st.error("⏳ API Limit erreicht. Bitte in 1 Minute erneut versuchen.")
+        else:
+            st.error(f"Fehler beim Speichern: {e}")
         return False
 
 # ---- App UI ----
@@ -279,9 +266,6 @@ st.markdown("""
     }
     .row-widget.stNumberInput {
         max-width: 100px;
-    }
-    [data-testid="metric-container"] {
-        padding: 0.5rem;
     }
     .save-button {
         background-color: #28a745;
@@ -312,15 +296,17 @@ if not st.session_state.userid:
     
     if st.button("Login"):
         try:
-            sheets = open_sheets()
-            ws_current = sheets['current_plan']
+            worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
+            if not worksheet:
+                st.error("⏳ Google Sheets momentan nicht erreichbar. Bitte später versuchen.")
+                st.stop()
             
             # Prüfe ob UserID existiert
-            header = ws_current.row_values(1)
+            header = worksheet.row_values(1)
             uid_col = header.index("UserID") + 1
             
             # Hole nur die UserID Spalte
-            user_ids = ws_current.col_values(uid_col)[1:]  # Skip header
+            user_ids = worksheet.col_values(uid_col)[1:]  # Skip header
             valid_ids = [id.strip() for id in user_ids if id.strip()]
             
             if uid.strip() in valid_ids:
@@ -331,12 +317,11 @@ if not st.session_state.userid:
                 st.error("UserID nicht gefunden.")
                 
         except Exception as e:
-            st.error(f"Login-Fehler: {e}")
+            if "quota" in str(e).lower():
+                st.error("⏳ Google Sheets Limit erreicht. Bitte in 1 Minute erneut versuchen.")
+            else:
+                st.error(f"Login-Fehler: {e}")
     st.stop()
-
-# Sheets initialisieren
-sheets = open_sheets()
-ws_current = sheets['current_plan']
 
 # ---- Hauptnavigation ----
 tab1, tab2, tab3 = st.tabs(["Training", "Neuer Plan", "Historie"])
@@ -347,21 +332,25 @@ with tab1:
     if st.session_state.unsaved_changes:
         st.markdown('<div class="unsaved-indicator">⚠️ Ungespeicherte Änderungen vorhanden!</div>', unsafe_allow_html=True)
     
-    # Speichern Button prominent platzieren
+    # Speichern Button
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("💾 **Alle Änderungen speichern**", type="primary", disabled=not st.session_state.unsaved_changes):
             with st.spinner("Speichere Änderungen..."):
-                # Lade aktuelle Daten für Spalten-Mapping
-                current_df = load_user_data(ws_current, st.session_state.userid)
-                if save_all_changes(ws_current, current_df):
-                    st.success("✅ Alle Änderungen gespeichert!")
-                    st.cache_data.clear()
-                    time.sleep(1)
-                    st.rerun()
+                current_df = load_user_data(st.session_state.userid)
+                if current_df is not None and not current_df.empty:
+                    if save_all_changes(current_df):
+                        st.success("✅ Alle Änderungen gespeichert!")
+                        load_user_data.clear()  # Cache leeren
+                        time.sleep(1)
+                        st.rerun()
     
     # Lade Daten
-    current_df = load_user_data(ws_current, st.session_state.userid)
+    current_df = load_user_data(st.session_state.userid)
+    
+    if current_df is None:
+        st.error("⏳ Google Sheets Limit erreicht. Bitte warte 1 Minute und lade die Seite neu.")
+        st.stop()
     
     if not current_df.empty:
         # Gruppiere nach Workout
@@ -389,51 +378,53 @@ with tab1:
                         
                         col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
                         
+                        row_idx = row['_row_index']  # Verwende den stabilen Index
+                        
                         with col1:
                             st.write(f"**Satz {int(row.get('Satz-Nr.', 1))}**")
                         
                         with col2:
-                            current_weight = get_value(idx, 'Gewicht', float(row.get('Gewicht', 0)))
+                            current_weight = get_value(row_idx, 'Gewicht', float(row.get('Gewicht', 0)))
                             new_weight = st.number_input(
                                 "Gewicht (kg)",
                                 value=current_weight,
                                 step=2.5,
-                                key=f"weight_{idx}",
-                                on_change=lambda i=idx, f='Gewicht': track_change(i, f, st.session_state[f"weight_{i}"])
+                                key=f"weight_{row_idx}",
+                                on_change=lambda idx=row_idx, f='Gewicht': track_change(idx, f, st.session_state[f"weight_{idx}"])
                             )
                         
                         with col3:
-                            current_reps = get_value(idx, 'Wdh', int(row.get('Wdh', 0)))
+                            current_reps = get_value(row_idx, 'Wdh', int(row.get('Wdh', 0)))
                             new_reps = st.number_input(
                                 "Wiederholungen",
                                 value=current_reps,
                                 step=1,
-                                key=f"reps_{idx}",
-                                on_change=lambda i=idx, f='Wdh': track_change(i, f, st.session_state[f"reps_{i}"])
+                                key=f"reps_{row_idx}",
+                                on_change=lambda idx=row_idx, f='Wdh': track_change(idx, f, st.session_state[f"reps_{idx}"])
                             )
                         
                         with col4:
-                            current_status = get_value(idx, 'Erledigt', str(row.get('Erledigt', 'FALSE')).upper())
+                            current_status = get_value(row_idx, 'Erledigt', str(row.get('Erledigt', 'FALSE')).upper())
                             
                             if current_status == 'TRUE':
-                                if st.button("✓ Erledigt", key=f"status_{idx}", type="primary"):
-                                    track_change(idx, 'Erledigt', 'FALSE')
+                                if st.button("✓ Erledigt", key=f"status_{row_idx}", type="primary"):
+                                    track_change(row_idx, 'Erledigt', 'FALSE')
                                     st.rerun()
                             else:
-                                if st.button("Erledigt", key=f"status_{idx}"):
-                                    track_change(idx, 'Erledigt', 'TRUE')
-                                    track_change(idx, 'Gewicht', new_weight)
-                                    track_change(idx, 'Wdh', new_reps)
+                                if st.button("Erledigt", key=f"status_{row_idx}"):
+                                    track_change(row_idx, 'Erledigt', 'TRUE')
+                                    track_change(row_idx, 'Gewicht', new_weight)
+                                    track_change(row_idx, 'Wdh', new_reps)
                                     st.rerun()
                         
                         # Nachricht an Trainer
-                        current_msg = get_value(idx, 'Mitteilung an den Trainer', row.get('Mitteilung an den Trainer', ''))
+                        current_msg = get_value(row_idx, 'Mitteilung an den Trainer', row.get('Mitteilung an den Trainer', ''))
                         new_message = st.text_input(
                             "Nachricht an Trainer",
                             value=current_msg,
-                            key=f"msg_{idx}",
+                            key=f"msg_{row_idx}",
                             placeholder="z.B. Schulter schmerzt leicht",
-                            on_change=lambda i=idx, f='Mitteilung an den Trainer': track_change(i, f, st.session_state[f"msg_{i}"])
+                            on_change=lambda idx=row_idx, f='Mitteilung an den Trainer': track_change(idx, f, st.session_state[f"msg_{idx}"])
                         )
         
         # Reminder am Ende
@@ -451,19 +442,6 @@ with tab2:
         st.error("OpenAI API Key fehlt. Bitte in Streamlit Secrets konfigurieren.")
         st.stop()
     
-    # Lade Archivdaten nur wenn benötigt
-    if st.checkbox("Trainingshistorie anzeigen"):
-        ws_archive = get_archive_sheet()
-        if ws_archive:
-            with st.spinner("Lade Historie..."):
-                archive_data = load_user_data(ws_archive, st.session_state.userid)
-                if not archive_data.empty:
-                    st.text("Deine letzten Trainings:")
-                    # Zeige nur Zusammenfassung
-                    exercises = archive_data['Übung'].value_counts().head(10)
-                    for ex, count in exercises.items():
-                        st.write(f"- {ex}: {count}x trainiert")
-    
     additional_goals = st.text_area("Zusätzliche Ziele/Wünsche (optional)")
     plan_name = st.text_input("Plan-Name (optional)", placeholder="z.B. Woche 1 - Push/Pull")
     
@@ -479,14 +457,6 @@ with tab2:
                     'Verfügbare_Tage': '3',
                     'Ausrüstung': 'Fitnessstudio'
                 }
-                
-                # Fragebogen-Daten holen wenn verfügbar
-                ws_fragebogen = get_fragebogen_sheet()
-                if ws_fragebogen:
-                    fragebogen_data = load_user_data(ws_fragebogen, st.session_state.userid)
-                    if not fragebogen_data.empty:
-                        user_profile = fragebogen_data.iloc[0].to_dict()
-                        template_data.update({k: v for k, v in user_profile.items() if k in template_data})
                 
                 prompt = prompt_template.safe_substitute(template_data)
                 
@@ -508,35 +478,14 @@ with tab2:
                 with st.expander("Plan-Vorschau", expanded=True):
                     st.text(plan_text)
                 
-                # Plan aktivieren
-                if st.button("Plan aktivieren", type="primary"):
-                    # Implementierung der Plan-Aktivierung
-                    st.info("Plan-Aktivierung in Arbeit...")
-                    # TODO: Parse und speichere Plan
+                # TODO: Plan aktivieren implementieren
                 
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")
 
 # ---- Tab 3: Historie ----
 with tab3:
-    st.header("Plan-Historie")
-    
-    ws_plan_history = get_plan_history_sheet()
-    if ws_plan_history:
-        with st.spinner("Lade Historie..."):
-            history_data = load_user_data(ws_plan_history, st.session_state.userid)
-            if not history_data.empty:
-                history_data = history_data.sort_values('Datum', ascending=False)
-                
-                for idx, plan in history_data.iterrows():
-                    with st.expander(f"{plan.get('Plan_Name', 'Plan')} - {plan.get('Datum', '')}"):
-                        plan_data = plan.get('Plan_Daten', '')
-                        if plan_data:
-                            st.text(plan_data[:500] + "..." if len(plan_data) > 500 else plan_data)
-            else:
-                st.info("Noch keine Historie vorhanden.")
-    else:
-        st.info("Historie-Sheet nicht verfügbar.")
+    st.info("Historie-Funktion wird in der nächsten Version verfügbar sein.")
 
 st.markdown("---")
-st.caption("v4.0 - Optimiert für minimale API Requests")
+st.caption("v4.1 - Optimiert für minimale API Requests mit besserem Error Handling")

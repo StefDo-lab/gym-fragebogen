@@ -306,7 +306,8 @@ with tab1:
             exercises = workout_data['Übung'].unique()
             
             for exercise in exercises:
-                with st.expander(f"**{exercise}**", expanded=True):
+                # ÄNDERUNG: expanded=False statt expanded=True
+                with st.expander(f"**{exercise}**", expanded=False):
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
                     # Trainer-Hinweise
@@ -496,7 +497,7 @@ with tab2:
     else:
         st.info("Lade zuerst deine Workouts im 'Training' Tab")
 
-# ---- Tab 3: Neuer Plan ----
+# ---- Tab 3: Neuer Plan (MIT FUNKTIONIERENDER PLANGENERIERUNG) ----
 with tab3:
     st.subheader("Neuen Trainingsplan erstellen")
     
@@ -504,10 +505,27 @@ with tab3:
         st.error("OpenAI API Key fehlt!")
         st.stop()
     
-    # Zeige Workout-Historie
-    with st.expander("📊 Deine Trainingshistorie"):
-        history = analyze_workout_history(st.session_state.userid)
-        st.text(history)
+    # Lade Archivdaten für Historie
+    archive_data = pd.DataFrame()
+    archive_sheet = get_sheet(ARCHIVE_SHEET)
+    if archive_sheet:
+        try:
+            archive_records = archive_sheet.get_all_records()
+            if archive_records:
+                archive_data = pd.DataFrame(archive_records)
+                for col in ["Gewicht", "Wdh"]:
+                    if col in archive_data.columns:
+                        archive_data[col] = pd.to_numeric(archive_data[col], errors='coerce').fillna(0)
+                if 'UserID' in archive_data.columns:
+                    archive_data['UserID'] = archive_data['UserID'].astype(str).str.strip()
+        except:
+            pass
+    
+    # Zeige Historie
+    if not archive_data.empty:
+        with st.expander("📊 Deine Trainingshistorie"):
+            history_summary = analyze_workout_history(st.session_state.userid)
+            st.text(history_summary)
     
     # Zeige Fragebogen-Daten
     fragebogen_data = {}
@@ -515,13 +533,13 @@ with tab3:
     if fragebogen_sheet:
         try:
             fb_data = fragebogen_sheet.get_all_records()
-            user_profile = next((r for r in fb_data if r.get('UserID') == st.session_state.userid), {})
+            user_profile = next((r for r in fb_data if str(r.get('UserID')).strip() == st.session_state.userid), {})
             if user_profile:
                 with st.expander("📋 Deine Profildaten"):
                     for key, value in user_profile.items():
                         if key != 'UserID' and value:
                             st.write(f"**{key}:** {value}")
-                fragebogen_data = user_profile
+                fragebogen_data = {k: v for k, v in user_profile.items() if k != 'UserID'}
         except:
             pass
     
@@ -535,24 +553,34 @@ with tab3:
     if st.button("🤖 Plan mit KI erstellen", type="primary"):
         with st.spinner("KI erstellt deinen personalisierten Plan..."):
             try:
-                # Sammle alle Informationen
-                workout_summary = analyze_workout_history(st.session_state.userid)
+                # Analysiere Historie
+                workout_summary = analyze_workout_history(st.session_state.userid) if not archive_data.empty else "Keine Daten"
+                
+                # Template-Daten
+                template_data = {
+                    'workout_summary': workout_summary,
+                    'additional_goals': additional_goals or "Allgemeine Fitness",
+                    'Fitnesslevel': fragebogen_data.get('Fitnesslevel', 'Mittel'),
+                    'Ziel': fragebogen_data.get('Ziel', 'Muskelaufbau'),
+                    'Verfügbare_Tage': fragebogen_data.get('Verfügbare_Tage', '3'),
+                    'Ausrüstung': fragebogen_data.get('Ausrüstung', 'Fitnessstudio')
+                }
                 
                 # Erstelle Prompt
                 prompt = f"""
                 Erstelle einen personalisierten Trainingsplan basierend auf:
                 
                 BENUTZERPROFIL:
-                - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
-                - Ziele: {fragebogen_data.get('Ziel', 'Allgemeine Fitness')}
-                - Verfügbare Tage: {fragebogen_data.get('Verfügbare_Tage', '3')}
-                - Ausrüstung: {fragebogen_data.get('Ausrüstung', 'Fitnessstudio')}
+                - Fitnesslevel: {template_data['Fitnesslevel']}
+                - Ziele: {template_data['Ziel']}
+                - Verfügbare Tage: {template_data['Verfügbare_Tage']}
+                - Ausrüstung: {template_data['Ausrüstung']}
                 
                 BISHERIGE LEISTUNGEN:
-                {workout_summary}
+                {template_data['workout_summary']}
                 
                 ZUSÄTZLICHE WÜNSCHE:
-                {additional_goals or 'Keine speziellen Wünsche'}
+                {template_data['additional_goals']}
                 
                 Erstelle einen Wochenplan mit verschiedenen Workouts.
                 """
@@ -580,7 +608,7 @@ with tab3:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.7,
-                    max_tokens=2000
+                    max_tokens=2500
                 )
                 
                 plan_text = response.choices[0].message.content
@@ -590,63 +618,43 @@ with tab3:
                 with st.expander("📋 Plan-Vorschau", expanded=True):
                     st.text(plan_text)
                 
-                # Parse Plan direkt
-                new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
+                # Parse neuen Plan
+                new_plan_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
                 
-                if new_rows:
-                    st.info(f"Plan enthält {len(new_rows)} Sätze")
+                if new_plan_rows:
+                    st.info(f"Plan enthält {len(new_plan_rows)} Sätze")
                     
                     # Plan aktivieren Button
                     if st.button("✅ Plan aktivieren und in Google Sheets speichern", type="primary"):
                         try:
                             worksheet = get_worksheet()
                             
-                            # Debug Info
-                            st.write("Debug: Verbindung hergestellt")
+                            # Lade aktuelle Daten für das Löschen
+                            current_df = load_user_workouts()
                             
-                            # Lösche alte Einträge des Users
-                            with st.spinner("Lösche alte Einträge..."):
-                                all_data = worksheet.get_all_values()
-                                
-                                # Finde alle Zeilen dieses Users (von unten nach oben)
-                                rows_to_delete = []
-                                for i in range(len(all_data)-1, 0, -1):  # Von unten nach oben, skip header
-                                    row = all_data[i]
-                                    if len(row) > 0 and row[0] == st.session_state.userid:  # UserID ist in Spalte 0
-                                        rows_to_delete.append(i + 1)  # +1 weil Sheets bei 1 anfängt
-                                
-                                st.write(f"Debug: Lösche {len(rows_to_delete)} alte Zeilen")
-                                
-                                # Lösche Zeilen einzeln von unten nach oben
-                                for row_num in sorted(rows_to_delete):
-                                    worksheet.delete_rows(row_num)
-                                    time.sleep(0.2)
+                            # Lösche alte Einträge
+                            if current_df is not None and not current_df.empty:
+                                user_rows = current_df.index
+                                with st.spinner(f"Lösche {len(user_rows)} alte Einträge..."):
+                                    for idx in sorted(user_rows, reverse=True):
+                                        worksheet.delete_rows(idx + 2)
+                                        time.sleep(0.1)
                             
-                            # Hole Header für neue Zeilen
+                            # Füge neuen Plan ein
                             header = worksheet.row_values(1)
-                            st.write(f"Debug: Header hat {len(header)} Spalten")
-                            
-                            # Füge neue Zeilen ein
-                            with st.spinner(f"Füge {len(new_rows)} neue Zeilen ein..."):
-                                success_count = 0
-                                for i, row_data in enumerate(new_rows):
-                                    new_row = []
-                                    for col_name in header:
+                            with st.spinner(f"Füge {len(new_plan_rows)} neue Zeilen ein..."):
+                                for i, row_data in enumerate(new_plan_rows):
+                                    new_row = [''] * len(header)
+                                    for j, col_name in enumerate(header):
                                         if col_name in row_data:
-                                            new_row.append(str(row_data[col_name]))
-                                        else:
-                                            new_row.append('')
-                                    
+                                            new_row[j] = str(row_data[col_name])
                                     worksheet.append_row(new_row)
-                                    success_count += 1
                                     
-                                    # Progress Update
                                     if i % 10 == 0:
-                                        st.write(f"Fortschritt: {i+1}/{len(new_rows)} Zeilen")
-                                    
+                                        st.write(f"Fortschritt: {i+1}/{len(new_plan_rows)} Zeilen")
                                     time.sleep(0.1)
                             
-                            st.success(f"✅ {success_count} Zeilen wurden erfolgreich eingefügt!")
+                            st.success("✅ Neuer Plan wurde aktiviert!")
                             st.balloons()
                             
                             # Clear cache
@@ -655,14 +663,15 @@ with tab3:
                             
                         except Exception as e:
                             st.error(f"Fehler beim Speichern: {str(e)}")
-                            st.write("Vollständiger Fehler:", e)
                             import traceback
                             st.write(traceback.format_exc())
                 else:
-                    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
-                        
+                    st.error("Konnte keinen Plan erstellen. Bitte versuche es erneut.")
+                    
             except Exception as e:
-                st.error(f"Fehler bei der Plan-Erstellung: {str(e)}")
+                st.error(f"Fehler: {str(e)}")
+                if "quota" in str(e).lower():
+                    st.error("API-Limit erreicht. Bitte später versuchen.")
 
 # ---- Tab 4: Daten Management ----
 with tab4:
@@ -685,4 +694,4 @@ with tab4:
             st.json({k: v for k, v in st.session_state.items() if k != 'user_data'})
 
 st.markdown("---")
-st.caption("v8.2 - Mit korrigierter KI-Planerstellung")
+st.caption("v8.3 - Mit funktionierender Plangenerierung und eingeklappten Workouts")

@@ -594,18 +594,75 @@ with tab3:
                 new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
                 
                 if new_rows:
-    st.info(f"Plan enthält {len(new_rows)} Sätze")
-    # Plan aktivieren Button
-    if st.button("Plan aktivieren", type="primary"):
-        activate_plan_with_debug(new_rows)
-else:
-    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
-
+                    st.info(f"Plan enthält {len(new_rows)} Sätze")
+                    
+                    # Plan aktivieren Button
+                    if st.button("✅ Plan aktivieren und in Google Sheets speichern", type="primary"):
+                        try:
+                            worksheet = get_worksheet()
+                            
+                            # Debug Info
+                            st.write("Debug: Verbindung hergestellt")
+                            
+                            # Lösche alte Einträge des Users
+                            with st.spinner("Lösche alte Einträge..."):
+                                all_data = worksheet.get_all_values()
+                                
+                                # Finde alle Zeilen dieses Users (von unten nach oben)
+                                rows_to_delete = []
+                                for i in range(len(all_data)-1, 0, -1):  # Von unten nach oben, skip header
+                                    row = all_data[i]
+                                    if len(row) > 0 and row[0] == st.session_state.userid:  # UserID ist in Spalte 0
+                                        rows_to_delete.append(i + 1)  # +1 weil Sheets bei 1 anfängt
+                                
+                                st.write(f"Debug: Lösche {len(rows_to_delete)} alte Zeilen")
+                                
+                                # Lösche Zeilen einzeln von unten nach oben
+                                for row_num in sorted(rows_to_delete):
+                                    worksheet.delete_rows(row_num)
+                                    time.sleep(0.2)
+                            
+                            # Hole Header für neue Zeilen
+                            header = worksheet.row_values(1)
+                            st.write(f"Debug: Header hat {len(header)} Spalten")
+                            
+                            # Füge neue Zeilen ein
+                            with st.spinner(f"Füge {len(new_rows)} neue Zeilen ein..."):
+                                success_count = 0
+                                for i, row_data in enumerate(new_rows):
+                                    new_row = []
+                                    for col_name in header:
+                                        if col_name in row_data:
+                                            new_row.append(str(row_data[col_name]))
+                                        else:
+                                            new_row.append('')
+                                    
+                                    worksheet.append_row(new_row)
+                                    success_count += 1
+                                    
+                                    # Progress Update
+                                    if i % 10 == 0:
+                                        st.write(f"Fortschritt: {i+1}/{len(new_rows)} Zeilen")
+                                    
+                                    time.sleep(0.1)
+                            
+                            st.success(f"✅ {success_count} Zeilen wurden erfolgreich eingefügt!")
+                            st.balloons()
+                            
+                            # Clear cache
+                            st.session_state.user_data = None
+                            st.info("Gehe zum 'Training' Tab und klicke '📥 Workouts laden'!")
+                            
+                        except Exception as e:
+                            st.error(f"Fehler beim Speichern: {str(e)}")
+                            st.write("Vollständiger Fehler:", e)
+                            import traceback
+                            st.write(traceback.format_exc())
+                else:
+                    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
                         
             except Exception as e:
-                st.error(f"Fehler: {str(e)}")
-                st.write("Debug Info:")
-                st.write(e)
+                st.error(f"Fehler bei der Plan-Erstellung: {str(e)}")
 
 # ---- Tab 4: Daten Management ----
 with tab4:
@@ -628,50 +685,4 @@ with tab4:
             st.json({k: v for k, v in st.session_state.items() if k != 'user_data'})
 
 st.markdown("---")
-st.caption("v8.1 - Mit funktionierender KI-Planerstellung")
-
-# ---- Debug-Funktion für Tab 3 ----
-def activate_plan_with_debug(new_rows):
-    try:
-        worksheet = get_worksheet()
-        if not worksheet:
-            st.error("FEHLER: Worksheet konnte nicht geladen werden!")
-            st.stop()
-        header = worksheet.row_values(1)
-        st.write("Header aus Sheet:", header)
-        all_data = worksheet.get_all_values()
-        st.write("Anzahl aller Zeilen im Sheet:", len(all_data))
-        rows_to_delete = []
-        for i, row in enumerate(all_data[1:], 2):
-            st.write(f"Zeile {i}: {row}")
-            try:
-                if row[header.index("UserID")] == st.session_state.userid:
-                    rows_to_delete.append(i)
-            except Exception as e:
-                st.write(f"Fehler bei Zeile {i}: {e}")
-        st.write("Zu löschende Zeilen:", rows_to_delete)
-        if rows_to_delete:
-            with st.spinner("Lösche alte Einträge..."):
-                for row_num in sorted(rows_to_delete, reverse=True):
-                    worksheet.delete_rows(row_num)
-        else:
-            st.info("Es wurden keine alten Einträge gefunden.")
-        with st.spinner("Füge neuen Plan ein..."):
-            for row_data in new_rows:
-                new_row = [''] * len(header)
-                for i, col_name in enumerate(header):
-                    if col_name in row_data:
-                        new_row[i] = str(row_data[col_name])
-                st.write("Füge neue Zeile ein:", new_row)
-                worksheet.append_row(new_row)
-                time.sleep(0.1)
-        st.success("Neuer Plan wurde aktiviert!")
-        st.balloons()
-        st.session_state.user_data = None
-        st.info("Gehe zum 'Training' Tab und lade deine Workouts neu!")
-    except Exception as e:
-        st.error(f"Fehler: {str(e)}")
-        import traceback
-        st.text(traceback.format_exc())
-
-
+st.caption("v8.2 - Mit korrigierter KI-Planerstellung")

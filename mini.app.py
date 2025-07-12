@@ -139,11 +139,25 @@ def save_changes():
         return False, "Keine Verbindung zum Arbeitsblatt."
     
     try:
-        # LÖSCHEN
+        # LÖSCHEN via Batch Update
         if st.session_state.rows_to_delete:
-            sorted_rows_to_delete = sorted(list(set(st.session_state.rows_to_delete)), reverse=True)
-            st.write(f"Lösche {len(sorted_rows_to_delete)} Zeilen...")
-            worksheet.delete_rows(sorted_rows_to_delete)
+            st.write(f"Bereite Löschung von {len(st.session_state.rows_to_delete)} Zeilen vor...")
+            requests = []
+            # Sortieren, damit die Indizes beim konzeptionellen Löschen korrekt bleiben
+            for row_num in sorted(list(set(st.session_state.rows_to_delete)), reverse=True):
+                requests.append({
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": worksheet.id,
+                            "dimension": "ROWS",
+                            "startIndex": row_num - 1, # API ist 0-indexed
+                            "endIndex": row_num
+                        }
+                    }
+                })
+            
+            if requests:
+                worksheet.spreadsheet.batch_update({'requests': requests})
             st.session_state.rows_to_delete = []
 
         # HINZUFÜGEN
@@ -266,7 +280,7 @@ def parse_ai_plan_to_rows(plan_text, user_id):
     return rows
 
 # ---- Haupt-App-Logik ----
-if st.session_state.user_data is None:
+if 'user_data' not in st.session_state or st.session_state.user_data is None:
     st.session_state.user_data = load_user_workouts()
 
 df = st.session_state.user_data
@@ -293,11 +307,75 @@ with tab1:
         st.warning("⚠️ Du hast ungespeicherte Änderungen! Bitte speichern.")
 
     if df is not None and not df.empty:
-        # ... (UI Code für Trainingsansicht bleibt gleich)
         workouts = df['Workout Name'].unique()
+        
         for workout in workouts:
             st.subheader(workout)
-            # ...
+            workout_data = df[df['Workout Name'] == workout]
+            exercises = workout_data['Übung'].unique()
+            
+            for exercise in exercises:
+                with st.expander(f"**{exercise}**", expanded=False):
+                    exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
+                    
+                    trainer_hint = exercise_data.iloc[0].get('Hinweis vom Trainer', '')
+                    if trainer_hint and trainer_hint.strip():
+                        st.info(f"💬 **Trainer-Hinweis:** {trainer_hint}")
+                    
+                    for _, row in exercise_data.iterrows():
+                        row_num = row['_row_num']
+                        if row_num in st.session_state.rows_to_delete:
+                            continue
+                        
+                        cols = st.columns([1, 2, 2, 1.5, 0.5])
+                        cols[0].write(f"**Satz {int(row['Satz-Nr.'])}**")
+                        
+                        for i, (col_name, label, step) in enumerate([('Gewicht', 'Gewicht (kg)', 2.5), ('Wdh', 'Wiederholungen', 1)]):
+                            with cols[i+1]:
+                                key = (row_num, col_name)
+                                current_val = st.session_state.local_changes.get(key, row[col_name])
+                                new_val = st.number_input(label, value=float(current_val), step=float(step), key=f"{col_name[0]}_{row_num}")
+                                if new_val != row[col_name]:
+                                    st.session_state.local_changes[key] = new_val
+                                    st.session_state.unsaved_changes = True
+                        
+                        with cols[3]:
+                            key = (row_num, 'Erledigt')
+                            is_done = st.session_state.local_changes.get(key, str(row.get('Erledigt', 'FALSE')).upper() == 'TRUE')
+                            new_is_done = st.toggle("Erledigt", value=is_done, key=f"done_{row_num}")
+                            if new_is_done != is_done:
+                                st.session_state.local_changes[key] = 'TRUE' if new_is_done else 'FALSE'
+                                st.session_state.unsaved_changes = True
+                                st.rerun()
+
+                        with cols[4]:
+                            if st.button("🗑️", key=f"del_{row_num}", help="Satz löschen"):
+                                st.session_state.rows_to_delete.append(row_num)
+                                st.session_state.unsaved_changes = True
+                                st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    action_cols = st.columns([1, 1, 2])
+                    with action_cols[0]:
+                        if st.button(f"➕ Satz hinzufügen", key=f"add_set_{exercise}_{workout}"):
+                            last_row = exercise_data.iloc[-1]
+                            header = df.columns.drop('_row_num').tolist()
+                            new_row_dict = {col: last_row.get(col, '') for col in header}
+                            new_row_dict['Satz-Nr.'] = int(last_row['Satz-Nr.']) + 1
+                            new_row_dict['Erledigt'] = 'FALSE'
+                            st.session_state.rows_to_add.append([str(new_row_dict.get(col, '')) for col in header])
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
+                    
+                    with action_cols[1]:
+                        if st.button(f"❌ Übung löschen", key=f"del_ex_{exercise}_{workout}"):
+                            for r_num in exercise_data['_row_num']:
+                                if r_num not in st.session_state.rows_to_delete:
+                                    st.session_state.rows_to_delete.append(r_num)
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
+
     elif df is not None:
         st.info("Du hast aktuell keine geplanten Workouts.")
     else:
@@ -307,8 +385,42 @@ with tab1:
 with tab2:
     st.subheader("Neue Übung manuell hinzufügen")
     if df is not None:
-        # ... (Code für Neue Übung bleibt gleich)
-        pass
+        existing_workouts = list(df['Workout Name'].unique())
+        
+        with st.form("new_exercise_form"):
+            workout_name_option = st.selectbox("Zu welchem Workout hinzufügen?", ["Neues Workout erstellen"] + existing_workouts)
+            
+            if workout_name_option == "Neues Workout erstellen":
+                workout_name = st.text_input("Name des neuen Workouts", placeholder="z.B. Push Day")
+            else:
+                workout_name = workout_name_option
+
+            exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
+            num_sets = st.number_input("Anzahl Sätze", min_value=1, value=3)
+            default_weight = st.number_input("Start-Gewicht (kg)", min_value=0.0, value=20.0, step=2.5)
+            default_reps = st.number_input("Wiederholungen pro Satz", min_value=1, value=10)
+
+            submitted = st.form_submit_button("Übung hinzufügen", type="primary")
+
+            if submitted and exercise_name and workout_name:
+                worksheet = get_main_worksheet()
+                header = worksheet.row_values(1)
+                
+                for satz in range(1, num_sets + 1):
+                    new_row_dict = {
+                        'UserID': st.session_state.userid, 'Datum': datetime.date.today().isoformat(),
+                        'Workout Name': workout_name, 'Übung': exercise_name, 'Satz-Nr.': str(satz),
+                        'Gewicht': str(default_weight), 'Wdh': str(default_reps), 'Erledigt': 'FALSE',
+                        'Einheit': 'kg'
+                    }
+                    row_values = [str(new_row_dict.get(col, '')) for col in header]
+                    st.session_state.rows_to_add.append(row_values)
+                
+                st.session_state.unsaved_changes = True
+                st.success(f"'{exercise_name}' wurde hinzugefügt! Bitte im Training-Tab speichern.")
+                st.rerun()
+    else:
+        st.info("Lade zuerst deine Workouts im 'Training' Tab, um eine Übung hinzuzufügen.")
 
 # ---- Tab 3: Neuer Plan ----
 with tab3:
@@ -339,22 +451,34 @@ with tab3:
     additional_goals = st.text_area("Zusätzliche Ziele/Wünsche:", placeholder="z.B. Fokus auf Oberkörper...")
     
     if st.button("🤖 Plan mit KI generieren", type="primary"):
-        # ... (Prompt-Logik bleibt gleich) ...
         prompt = f"""
         Erstelle einen detaillierten und strukturierten wöchentlichen Trainingsplan.
+
         **Benutzerprofil & Ziele:**
         - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
         - Hauptziel: {fragebogen_data.get('Ziel', 'Muskelaufbau')}
-        ...
+        - Verfügbare Tage pro Woche: {fragebogen_data.get('Verfügbare_Tage', '3')}
+        - Ausrüstung: {fragebogen_data.get('Ausrüstung', 'Fitnessstudio')}
+        - Spezifische Wünsche: {additional_goals or "Allgemeine Fitness verbessern"}
+
+        **Bisherige Leistungen (Zusammenfassung):**
+        {history_summary}
+
+        **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
+        1. Jeder Workout-Tag MUSS mit einem Titel beginnen, der mit einem Doppelpunkt endet. Beispiel: `**Tag 1: Kraft Oberkörper:**`
+        2. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen. Beispiel: `- Bankdrücken: ...`
+        3. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg`
+        4. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
         """
-        try:
-            response = client.chat.completions.create(model='gpt-4o-mini', messages=[{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000)
-            st.session_state.plan_text = response.choices[0].message.content
-            st.session_state.new_plan_rows = parse_ai_plan_to_rows(st.session_state.plan_text, st.session_state.userid)
-        except Exception as e:
-            st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
-            st.session_state.plan_text = None
-            st.session_state.new_plan_rows = []
+        with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
+            try:
+                response = client.chat.completions.create(model='gpt-4o-mini', messages=[{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000)
+                st.session_state.plan_text = response.choices[0].message.content
+                st.session_state.new_plan_rows = parse_ai_plan_to_rows(st.session_state.plan_text, st.session_state.userid)
+            except Exception as e:
+                st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
+                st.session_state.plan_text = None
+                st.session_state.new_plan_rows = []
 
     if st.session_state.plan_text:
         st.subheader("Vorschau des neuen Plans")

@@ -19,7 +19,7 @@ def get_gsheet_worksheet():
     client = gspread.authorize(creds)
     return client.open(SHEET_NAME).worksheet(WORKSHEET_NAME)
 
-sheet = get_gsheet_worksheet()
+# ENTFERNT: sheet = get_gsheet_worksheet()
 
 # ---- App Titel ----
 st.title("Fitness- und Gesundheitsfragebogen")
@@ -202,8 +202,9 @@ if abgeschickt:
             training_haeufigkeit, "Ja" if einwilligung else "Nein"
         ]
         
-        # Google Sheets speichern
+        # Google Sheets speichern - Verbindung erst hier herstellen!
         try:
+            sheet = get_gsheet_worksheet()  # <-- NEU: Erst hier verbinden!
             sheet.append_row(new_row)
             st.success("✅ Daten in Google Sheets gespeichert!")
         except Exception as e:

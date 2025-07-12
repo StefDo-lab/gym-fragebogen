@@ -287,6 +287,9 @@ def parse_ai_plan_to_rows(plan_text, user_id):
 
         # Priorität 2: Wenn es keine Übung ist, ist es ein Workout-Titel?
         if ":" in line:
+            # Ignoriere reine Tag-Marker
+            if re.match(r'^\*?Tag\s*\d+\*?:\s*$', line, re.IGNORECASE):
+                continue
             potential_workout_name = line.replace('*', '').split(':', 1)[0].strip()
             if potential_workout_name:
                 current_workout = potential_workout_name
@@ -371,6 +374,24 @@ with tab1:
                     
                     st.markdown("---")
                     
+                    # Eingabefeld für User-Kommentar
+                    first_row_num = exercise_data.iloc[0]['_row_num']
+                    msg_key = (first_row_num, 'Mitteilung an den Trainer')
+                    current_msg = st.session_state.local_changes.get(msg_key, exercise_data.iloc[0].get('Mitteilung an den Trainer', ''))
+                    
+                    new_msg = st.text_input(
+                        "Mitteilung an den Trainer",
+                        value=current_msg or '',
+                        key=f"msg_{exercise}_{workout}",
+                        placeholder="z.B. Schulter zwickt bei dieser Übung"
+                    )
+                    
+                    if new_msg != current_msg:
+                        for _, row in exercise_data.iterrows():
+                            st.session_state.local_changes[(row['_row_num'], 'Mitteilung an den Trainer')] = new_msg
+                        st.session_state.unsaved_changes = True
+                        st.rerun()
+
                     action_cols = st.columns([1, 1, 2])
                     with action_cols[0]:
                         if st.button(f"➕ Satz hinzufügen", key=f"add_set_{exercise}_{workout}"):

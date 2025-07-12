@@ -421,7 +421,7 @@ with tab1:
             # ... rest der Konvertierung
                 return df
             else:
-            return pd.DataFrame()
+                return pd.DataFrame()
             
         except Exception as e:
             if "quota" in str(e).lower():

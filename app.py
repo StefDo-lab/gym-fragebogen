@@ -400,25 +400,34 @@ tab1, tab2, tab3 = st.tabs(["Training", "Neuer Plan", "Historie"])
 # ---- Tab 1: Aktueller Plan ----
 with tab1:
     # Lade aktuelle Daten
-    @st.cache_data(ttl=60)
+    @st.cache_data(ttl=300)
     def load_current_plan():
-        try:
-            rec = ws_current.get_all_records()
-            if not rec:
-                return pd.DataFrame()
-            df = pd.DataFrame(rec)
-            
-            for col in ["Gewicht", "Wdh", "Satz-Nr."]:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-            if 'UserID' in df.columns:
-                df['UserID'] = df['UserID'].astype(str).str.strip()
-            
-            return df
-        except Exception as e:
-            st.error(f"Fehler beim Laden: {e}")
+         try:
+            # Lade nur die Daten des aktuellen Users!
+            all_values = ws_current.get_all_values()
+            header = all_values[0]
+        
+            # Filtere direkt beim Laden
+            user_data = []
+            uid_col = header.index("UserID")
+        
+            for row in all_values[1:]:
+                if len(row) > uid_col and row[uid_col].strip() == st.session_state.userid:
+                   user_data.append(row)
+        
+        # Nur User-Daten zu DataFrame
+            if user_data:
+                df = pd.DataFrame(user_data, columns=header)
+            # ... rest der Konvertierung
+                return df
+            else:
             return pd.DataFrame()
+            
+        except Exception as e:
+            if "quota" in str(e).lower():
+                st.error("⏳ API Limit. Bitte warten...")
+                return pd.DataFrame()  # Leerer DataFrame statt Fehler
+            raise e
     
     current_df = load_current_plan()
     

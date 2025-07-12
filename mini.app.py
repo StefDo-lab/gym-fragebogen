@@ -594,14 +594,12 @@ with tab3:
                 new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
                 
                 if new_rows:
-                    st.info(f"Plan enthält {len(new_rows)} Sätze")
-                    
-                    # Plan aktivieren Button
-                    if st.button("Plan aktivieren", type="primary"):
-    activate_plan_with_debug(new_rows)
-
-                else:
-                    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
+    st.info(f"Plan enthält {len(new_rows)} Sätze")
+    # Plan aktivieren Button
+    if st.button("Plan aktivieren", type="primary"):
+        activate_plan_with_debug(new_rows)
+else:
+    st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
                         
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")

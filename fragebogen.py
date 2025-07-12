@@ -186,4 +186,58 @@ if abgeschickt:
             training_haeufigkeit, "Ja" if einwilligung else "Nein"
         ]
         sheet.append_row(new_row)
+        
+        # --- NEU: an Make.com Webhook senden ---
+        import requests
+        WEBHOOK_URL = "https://hook.eu2.make.com/i8vbdd2xgdif28ym98mhk174wsecx10t"  # <--- Deine URL eintragen!
+        payload = {
+            "vorname": vorname,
+            "nachname": nachname,
+            "geburtsdatum": str(geburtsdatum),
+            "email": email,
+            "telefon": telefon,
+            "geschlecht": geschlecht,
+            "erfassungsdatum": str(erfassungsdatum),
+            "studio": studio,
+            "groesse": groesse,
+            "gewicht": gewicht,
+            "kfa": kfa_out,
+            "krafttraining": krafttraining,
+            "ergaenzung": ergaenzung,
+            "ziele": "; ".join(ziele),
+            "weitere_ziele": weitere_ziele,
+            "op": op,
+            "op_details": op_details,
+            "schmerzen": schmerzen,
+            "schmerzen_details": schmerzen_details,
+            "bandscheibe": bandscheibe,
+            "bandscheibe_details": bandscheibe_details,
+            "osteoporose": osteoporose,
+            "osteoporose_details": osteoporose_details,
+            "bluthochdruck": bluthochdruck,
+            "bluthochdruck_details": bluthochdruck_details,
+            "brueche": brueche,
+            "brueche_details": brueche_details,
+            "herz": herz,
+            "herz_details": herz_details,
+            "schlaganfall": schlaganfall,
+            "schlaganfall_details": schlaganfall_details,
+            "gesundheit": gesundheit,
+            "konkrete_ziele": konkrete_ziele,
+            "gesundheitszustand": gesundheitszustand,
+            "einschraenkungen": einschraenkungen,
+            "schmerzen_beschwerden": schmerzen_beschwerden,
+            "stresslevel": stresslevel,
+            "schlaf": schlaf,
+            "ernaehrung": ernaehrung,
+            "motivation": motivation,
+            "training_haeufigkeit": training_haeufigkeit,
+            "einwilligung": "Ja" if einwilligung else "Nein"
+        }
+        try:
+            requests.post(WEBHOOK_URL, json=payload, timeout=5)
+        except Exception as e:
+            st.warning(f"Webhook konnte nicht gesendet werden: {e}")
+
         st.success("Danke für das Ausfüllen des Fragebogens!")
+

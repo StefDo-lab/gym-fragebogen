@@ -82,9 +82,8 @@ def get_gspread_client():
         st.error(f"Fehler bei der Google-Authentifizierung: {e}")
         return None
 
-@st.cache_data(ttl=300)
 def get_sheet_data(sheet_name):
-    """Holt alle Daten aus einem Arbeitsblatt und cached sie."""
+    """Holt alle Daten aus einem Arbeitsblatt. WICHTIG: Kein Caching für kritische Daten."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None
@@ -112,6 +111,8 @@ def get_main_worksheet():
 
 def load_user_workouts():
     """Lädt und filtert die Workouts des eingeloggten Benutzers."""
+    # Daten immer frisch laden, um Caching-Probleme zu vermeiden
+    st.cache_data.clear()
     all_data = get_sheet_data(WORKSHEET_NAME)
     if all_data is None:
         return None
@@ -498,6 +499,13 @@ with tab3:
     additional_goals = st.text_area("Zusätzliche Ziele/Wünsche:", placeholder="z.B. Fokus auf Oberkörper, 3er-Split Push/Pull/Beine...")
     
     if st.button("🤖 Plan mit KI generieren", type="primary"):
+        
+        # Dynamische Anweisung für Gewichte basierend auf der Historie
+        if "Keine Trainingshistorie" in history_summary:
+            weight_instruction = "Gib KEINE spezifischen Gewichte an. Setze das Gewicht für jede Übung auf 0 kg."
+        else:
+            weight_instruction = "Schlage realistische Startgewichte basierend auf der Trainingshistorie vor."
+
         prompt = f"""
         Erstelle einen detaillierten und strukturierten wöchentlichen Trainingsplan.
 
@@ -512,10 +520,11 @@ with tab3:
         {history_summary}
 
         **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
-        1. Jeder Workout-Tag MUSS mit einem Titel im Format `**Workout-Name:**` beginnen. Verwende funktionale Namen wie "Push Day", "Pull Day", "Ganzkörper A" etc. KEINE "Tag 1" Marker.
-        2. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen.
-        3. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
-        4. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
+        1. Jeder Workout-Tag MUSS mit einem Titel im Format `**Workout-Name:**` beginnen (z.B. `**Push Day:**`). Verwende funktionale Namen, KEINE "Tag 1" Marker.
+        2. Berücksichtige EXAKT den Wunsch nach einem bestimmten Split (z.B. Push/Pull/Beine), falls in den Wünschen angegeben.
+        3. {weight_instruction}
+        4. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
+        5. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
         """
         with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
             try:

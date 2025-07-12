@@ -597,37 +597,9 @@ with tab3:
                     st.info(f"Plan enthält {len(new_rows)} Sätze")
                     
                     # Plan aktivieren Button
-                    if st.button("✅ Plan aktivieren und in Google Sheets speichern", type="primary"):
-                        worksheet = get_worksheet()
-                        header = worksheet.row_values(1)
-                        
-                        # Lösche alte Einträge des Users
-                        with st.spinner("Lösche alte Einträge..."):
-                            all_data = worksheet.get_all_values()
-                            rows_to_delete = []
-                            for i, row in enumerate(all_data[1:], 2):
-                                if row[header.index("UserID")] == st.session_state.userid:
-                                    rows_to_delete.append(i)
-                            
-                            for row_num in sorted(rows_to_delete, reverse=True):
-                                worksheet.delete_rows(row_num)
-                        
-                        # Füge neue Zeilen ein
-                        with st.spinner("Füge neuen Plan ein..."):
-                            for row_data in new_rows:
-                                new_row = [''] * len(header)
-                                for i, col_name in enumerate(header):
-                                    if col_name in row_data:
-                                        new_row[i] = str(row_data[col_name])
-                                worksheet.append_row(new_row)
-                                time.sleep(0.1)  # Kleine Pause zwischen Zeilen
-                        
-                        st.success("✅ Neuer Plan wurde aktiviert!")
-                        st.balloons()
-                        
-                        # Clear cache
-                        st.session_state.user_data = None
-                        st.info("Gehe zum 'Training' Tab und lade deine Workouts neu!")
+                    if st.button("Plan aktivieren", type="primary"):
+    activate_plan_with_debug(new_rows)
+
                 else:
                     st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
                         
@@ -658,3 +630,48 @@ with tab4:
 
 st.markdown("---")
 st.caption("v8.1 - Mit funktionierender KI-Planerstellung")
+
+# ---- Debug-Funktion für Tab 3 ----
+def activate_plan_with_debug(new_rows):
+    try:
+        worksheet = get_worksheet()
+        if not worksheet:
+            st.error("FEHLER: Worksheet konnte nicht geladen werden!")
+            st.stop()
+        header = worksheet.row_values(1)
+        st.write("Header aus Sheet:", header)
+        all_data = worksheet.get_all_values()
+        st.write("Anzahl aller Zeilen im Sheet:", len(all_data))
+        rows_to_delete = []
+        for i, row in enumerate(all_data[1:], 2):
+            st.write(f"Zeile {i}: {row}")
+            try:
+                if row[header.index("UserID")] == st.session_state.userid:
+                    rows_to_delete.append(i)
+            except Exception as e:
+                st.write(f"Fehler bei Zeile {i}: {e}")
+        st.write("Zu löschende Zeilen:", rows_to_delete)
+        if rows_to_delete:
+            with st.spinner("Lösche alte Einträge..."):
+                for row_num in sorted(rows_to_delete, reverse=True):
+                    worksheet.delete_rows(row_num)
+        else:
+            st.info("Es wurden keine alten Einträge gefunden.")
+        with st.spinner("Füge neuen Plan ein..."):
+            for row_data in new_rows:
+                new_row = [''] * len(header)
+                for i, col_name in enumerate(header):
+                    if col_name in row_data:
+                        new_row[i] = str(row_data[col_name])
+                st.write("Füge neue Zeile ein:", new_row)
+                worksheet.append_row(new_row)
+                time.sleep(0.1)
+        st.success("Neuer Plan wurde aktiviert!")
+        st.balloons()
+        st.session_state.user_data = None
+        st.info("Gehe zum 'Training' Tab und lade deine Workouts neu!")
+    except Exception as e:
+        st.error(f"Fehler: {str(e)}")
+        import traceback
+        st.text(traceback.format_exc())
+

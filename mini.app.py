@@ -39,7 +39,11 @@ if not st.session_state.userid:
 def get_worksheet():
     if st.session_state.worksheet is None:
         try:
-            scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+            # WICHTIG: Beide Scopes sind nötig!
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 st.secrets["gcp_service_account"], scopes
             )
@@ -91,6 +95,12 @@ with tab2:
                         st.write("Gefundene Spalten:")
                         st.write(header)
                         
+                        # Teste ob wir User-Daten finden können
+                        if "UserID" in header:
+                            uid_col = header.index("UserID") + 1
+                            user_ids = worksheet.col_values(uid_col)[1:6]  # Nur erste 5
+                            st.write(f"Erste User IDs: {user_ids}")
+                        
                 except Exception as e:
                     if "quota" in str(e).lower():
                         st.error("⏳ API Limit erreicht. Bitte warte 60 Sekunden.")
@@ -101,6 +111,10 @@ with tab2:
         if st.button("🔄 Cache leeren"):
             st.session_state.worksheet = None
             st.success("Cache geleert")
+    
+    # Debug Info
+    with st.expander("Debug Info"):
+        st.write("Session State:", st.session_state)
 
 st.markdown("---")
-st.caption("v5.0 - Minimale Test-Version")
+st.caption("v5.1 - Mit korrekten Scopes")

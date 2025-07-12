@@ -357,7 +357,7 @@ with tab1:
             exercises = workout_data['Übung'].unique()
             
             for exercise in exercises:
-                # ÄNDERUNG: expanded=False statt expanded=True
+                # Workouts sind standardmäßig eingeklappt
                 with st.expander(f"**{exercise}**", expanded=False):
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
@@ -548,7 +548,7 @@ with tab2:
     else:
         st.info("Lade zuerst deine Workouts im 'Training' Tab")
 
-Copy# ---- Tab 3: Neuer Plan (MIT FUNKTIONIERENDER PLANGENERIERUNG) ----
+# ---- Tab 3: Neuer Plan ----
 with tab3:
     st.subheader("Neuen Trainingsplan erstellen")
     
@@ -771,4 +771,4 @@ with tab4:
             st.json({k: v for k, v in st.session_state.items() if k != 'user_data'})
 
 st.markdown("---")
-st.caption("v8.3 - Mit funktionierender Plangenerierung und eingeklappten Workouts")
+st.caption("v8.4 - Kompletter Code mit funktionierender Plangenerierung")

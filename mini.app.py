@@ -7,7 +7,7 @@ from openai import OpenAI
 import time
 import re
 
-# ---- Konfiguration ----
+# ---- Configuration ----
 SHEET_NAME = "Workout Tabelle"
 WORKSHEET_NAME = "Tabellenblatt1"
 ARCHIVE_SHEET = "Workout_archiv"
@@ -17,9 +17,9 @@ FRAGEBOGEN_SHEET = "fragebogen"
 st.set_page_config(page_title="Workout Tracker", layout="wide")
 st.title("Workout Tracker")
 
-# ---- Session State Initialisierung ----
+# ---- Session State Initialization ----
 def init_session_state():
-    """Initialisiert den Session State, falls noch nicht geschehen."""
+    """Initializes the session state if not already done."""
     defaults = {
         'userid': None,
         'local_changes': {},
@@ -65,10 +65,10 @@ if not st.session_state.userid:
             st.rerun()
     st.stop()
 
-# ---- Google Sheets Verbindung & Datenlogik ----
+# ---- Google Sheets Connection & Data Logic ----
 @st.cache_resource
 def get_gspread_client():
-    """Stellt eine autorisierte Verbindung zu Google Sheets her und cached sie."""
+    """Establishes and caches an authorized connection to Google Sheets."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -83,7 +83,7 @@ def get_gspread_client():
         return None
 
 def get_sheet_data(sheet_name):
-    """Holt alle Daten aus einem Arbeitsblatt. WICHTIG: Kein Caching für kritische Daten."""
+    """Fetches all data from a worksheet. IMPORTANT: No caching for critical data."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None
@@ -98,7 +98,7 @@ def get_sheet_data(sheet_name):
         return None
 
 def get_main_worksheet():
-    """Gibt das gspread worksheet-Objekt für Schreibvorgänge zurück."""
+    """Returns the gspread worksheet object for write operations."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None
@@ -109,7 +109,7 @@ def get_main_worksheet():
         return None
 
 def get_user_profile(user_id):
-    """Holt das Benutzerprofil aus dem Fragebogen-Sheet."""
+    """Fetches the user profile from the questionnaire sheet."""
     all_fb_data = get_sheet_data(FRAGEBOGEN_SHEET)
     if all_fb_data:
         header = all_fb_data[0]
@@ -119,7 +119,7 @@ def get_user_profile(user_id):
     return {}
 
 def load_user_workouts():
-    """Lädt und filtert die Workouts des eingeloggten Benutzers."""
+    """Loads and filters the workouts of the logged-in user."""
     st.cache_data.clear()
     all_data = get_sheet_data(WORKSHEET_NAME)
     if all_data is None:
@@ -151,13 +151,13 @@ def load_user_workouts():
     return df
         
 def save_changes():
-    """Speichert alle lokalen Änderungen (Löschen, Hinzufügen, Aktualisieren)."""
+    """Saves all local changes (deletions, additions, updates)."""
     worksheet = get_main_worksheet()
     if not worksheet:
         return False, "Keine Verbindung zum Arbeitsblatt."
     
     try:
-        # LÖSCHEN via Batch Update
+        # DELETE via Batch Update
         if st.session_state.rows_to_delete:
             requests = []
             for row_num in sorted(list(set(st.session_state.rows_to_delete)), reverse=True):
@@ -176,12 +176,12 @@ def save_changes():
                 worksheet.spreadsheet.batch_update({'requests': requests})
             st.session_state.rows_to_delete = []
 
-        # HINZUFÜGEN
+        # ADD
         if st.session_state.rows_to_add:
             worksheet.append_rows(st.session_state.rows_to_add, value_input_option='USER_ENTERED')
             st.session_state.rows_to_add = []
         
-        # AKTUALISIEREN
+        # UPDATE
         if st.session_state.local_changes:
             batch_updates = []
             header = worksheet.row_values(1)
@@ -210,7 +210,7 @@ def save_changes():
         return False, f"Allgemeiner Fehler beim Speichern: {e}"
 
 def analyze_workout_history(user_id):
-    """Analysiert die Workout-Historie aus dem Archiv."""
+    """Analyzes the workout history from the archive."""
     all_data = get_sheet_data(ARCHIVE_SHEET)
     if not all_data: return "Keine Archiv-Daten verfügbar."
     
@@ -238,7 +238,7 @@ def analyze_workout_history(user_id):
 
 def parse_ai_plan_to_rows(plan_text, user_id, user_name):
     """
-    Konvertiert einen KI-generierten Textplan in strukturierte Tabellenzeilen.
+    Converts an AI-generated text plan into structured table rows.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
@@ -250,13 +250,13 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
         if not line:
             continue
 
-        # 1. Ist es ein Workout-Titel? (z.B. **Push Day:**)
+        # 1. Is it a Workout Title? (e.g., **Push Day:**)
         workout_match = re.match(r'^\*\*(.+?):\*\*', line)
         if workout_match:
             current_workout = workout_match.group(1).strip()
             continue
 
-        # 2. Ist es eine Übung? (z.B. - Bankdrücken: ...)
+        # 2. Is it an Exercise? (e.g., - Bench Press: ...)
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
@@ -296,7 +296,7 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
 
     return rows
 
-# ---- Haupt-App-Logik ----
+# ---- Main App Logic ----
 if 'user_data' not in st.session_state or st.session_state.user_data is None:
     st.session_state.user_data = load_user_workouts()
 
@@ -373,7 +373,7 @@ with tab1:
                     
                     st.markdown("---")
                     
-                    # Eingabefeld für User-Kommentar
+                    # User comment input field
                     first_row_num = exercise_data.iloc[0]['_row_num']
                     msg_key = (first_row_num, 'Mitteilung an den Trainer')
                     current_msg = st.session_state.local_changes.get(msg_key, exercise_data.iloc[0].get('Mitteilung an den Trainer', ''))
@@ -389,12 +389,12 @@ with tab1:
                     action_cols = st.columns([1, 1, 2])
                     with action_cols[0]:
                         if st.button(f"➕ Satz", key=f"add_set_{exercise}_{workout}"):
-                            # ... (Logik zum Hinzufügen bleibt gleich)
+                            # Logic for adding a set
                             pass
                     
                     with action_cols[1]:
                         if st.button(f"❌ Übung", key=f"del_ex_{exercise}_{workout}"):
-                            # ... (Logik zum Löschen bleibt gleich)
+                            # Logic for deleting an exercise
                             pass
 
     elif df is not None:
@@ -486,13 +486,13 @@ with tab3:
         **Bisherige Leistungen (Zusammenfassung):**
         {history_summary}
 
-        **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
-        1. Jeder Workout-Tag MUSS mit einem Titel im Format `**Workout-Name:**` beginnen (z.B. `**Push Day:**`).
-        2. HALTE DICH EXAKT AN DIE ANZAHL DER 'Verfügbare_Tage'. Wenn '2' angegeben ist, erstelle GENAU 2 Workouts.
-        3. Berücksichtige EXAKT den Wunsch nach einem bestimmten Split (z.B. Push/Pull/Beine), falls in den Wünschen angegeben.
-        4. {weight_instruction}
-        5. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
-        6. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
+        **HARD CONSTRAINTS (MUST be followed):**
+        1. **Number of Workouts:** Create EXACTLY {fragebogen_data.get('Verfügbare_Tage', '3')} workout days. No more, no less.
+        2. **Workout Names:** Each workout day MUST start with a title in the format `**Workout-Name:**` (e.g., `**Push Day:**`). Use functional and UNIQUE names (e.g., "Oberkörper A", "Oberkörper B").
+        3. **Split:** Strictly follow the requested split from 'Spezifische Wünsche' if provided (e.g., Push/Pull/Legs).
+        4. **Weights:** {weight_instruction}
+        5. **Output Format:** The format for each exercise MUST be exactly: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
+        6. **No Extra Text:** Do NOT add any general advice, summaries, or other text at the end. Only output the workout titles and exercise lists.
         """
         with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
             try:
@@ -518,6 +518,7 @@ with tab3:
             st.warning("**Achtung:** Das Aktivieren löscht alle deine aktuellen, nicht archivierten Workouts!")
             if st.button("✅ Diesen Plan aktivieren", type="primary"):
                 with st.spinner("Aktiviere neuen Plan..."):
+                    # Securely load the current user's data
                     current_user_df = load_user_workouts()
                     if current_user_df is not None and not current_user_df.empty:
                         st.session_state.rows_to_delete.extend(current_user_df['_row_num'].tolist())

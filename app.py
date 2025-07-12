@@ -423,7 +423,7 @@ with tab1:
             else:
                 return pd.DataFrame()
             
-        except Exception as e:
+         except Exception as e:
             if "quota" in str(e).lower():
                 st.error("⏳ API Limit. Bitte warten...")
                 return pd.DataFrame()  # Leerer DataFrame statt Fehler

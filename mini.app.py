@@ -2,47 +2,36 @@ import streamlit as st
 import datetime
 import gspread
 import pandas as pd
-import numpy as np
 from oauth2client.service_account import ServiceAccountCredentials
-from string import Template
 from openai import OpenAI
-import json
-import os
-import re
 import time
+import re
 
 # ---- Konfiguration ----
 SHEET_NAME = "Workout Tabelle"
 WORKSHEET_NAME = "Tabellenblatt1"
 ARCHIVE_SHEET = "Workout_archiv"
 FRAGEBOGEN_SHEET = "fragebogen"
-PLAN_HISTORY_SHEET = "Plan_Historie"
-PROMPT_TEMPLATE_PATH = "prompt_templates/update_plan.txt"
-SYSTEM_PROMPT_PATH = "prompt_templates/system_prompt.txt"
 
-# ---- Google Sheets Setup ----
-@st.cache_resource
-def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = ServiceAccountCredentials.from_json_keyfile_dict(
-        st.secrets["gcp_service_account"], scopes
-    )
-    return gspread.authorize(creds)
+# ---- App UI ----
+st.set_page_config(page_title="Workout Tracker", layout="wide")
+st.title("Workout Tracker")
 
-@st.cache_resource
-def get_worksheet(sheet_name, worksheet_name):
-    """Cached worksheet getter - wird nur einmal geladen"""
-    try:
-        client = get_gspread_client()
-        ss = client.open(sheet_name)
-        return ss.worksheet(worksheet_name)
-    except Exception as e:
-        if "quota" in str(e).lower():
-            return None
-        raise e
+# ---- Session State ----
+if 'userid' not in st.session_state:
+    st.session_state.userid = None
+if 'worksheet' not in st.session_state:
+    st.session_state.worksheet = None
+if 'local_changes' not in st.session_state:
+    st.session_state.local_changes = {}
+if 'unsaved_changes' not in st.session_state:
+    st.session_state.unsaved_changes = False
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = None
+if 'rows_to_delete' not in st.session_state:
+    st.session_state.rows_to_delete = []
+if 'rows_to_add' not in st.session_state:
+    st.session_state.rows_to_add = []
 
 # ---- OpenAI Setup ----
 openai_key = st.secrets.get("openai_api_key", None)
@@ -51,441 +40,614 @@ if openai_key:
 else:
     client = None
 
-# ---- Standard Templates ----
-DEFAULT_PROMPT_TEMPLATE = """
-Du bist ein professioneller Fitness-Trainer. Erstelle einen personalisierten Trainingsplan.
+# ---- Login ----
+if not st.session_state.userid:
+    st.subheader("Login")
+    uid = st.text_input("UserID", type="password")
+    
+    if st.button("Login"):
+        if uid:
+            st.session_state.userid = uid.strip()
+            st.success(f"Eingeloggt als {uid.strip()}")
+            st.rerun()
+    st.stop()
 
-BENUTZERPROFIL:
-- Fitnesslevel: ${Fitnesslevel}
-- Ziele: ${Ziel}
-- Verfügbare Tage: ${Verfügbare_Tage}
-- Ausrüstung: ${Ausrüstung}
-
-BISHERIGE LEISTUNGEN (letzte Workouts):
-${workout_summary}
-
-ZUSÄTZLICHE WÜNSCHE:
-${additional_goals}
-
-Erstelle einen Trainingsplan für die nächste Woche. Nutze alle verfügbaren Informationen bestmöglich.
-"""
-
-DEFAULT_SYSTEM_PROMPT = """Erstelle einen Wochenplan mit eindeutigen Workout-Namen. 
-
-WICHTIG: Jedes Workout muss einen EINDEUTIGEN Namen haben!
-Beispiele:
-- "Oberkörper A" (nicht nur "Oberkörper")
-- "Push Day 1" (nicht nur "Push Day")
-- "Beine & Po - Schwer" (nicht nur "Beine")
-
-Format:
-Oberkörper A:
-- Bankdrücken: 3 Sätze, 80kg, 8-10 Wdh
-- Rudern: 3 Sätze, 60kg, 10-12 Wdh
-
-Unterkörper A:
-- Kniebeuge: 4 Sätze, 100kg, 6-8 Wdh
-- Kreuzheben: 3 Sätze, 120kg, 5 Wdh
-
-Regeln:
-- Eindeutige Workout-Namen
-- Realistische Gewichte
-- 4-6 Übungen pro Workout
-- Klare Satz/Wdh Angaben"""
-
-# ---- Template Loader ----
-@st.cache_data
-def load_template(path: str, default: str):
-    if os.path.exists(path):
+# ---- Google Sheets Verbindung ----
+def get_worksheet():
+    if st.session_state.worksheet is None:
         try:
-            with open(path, 'r', encoding='utf-8') as f:
-                return f.read()
-        except:
-            pass
-    return default
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(
+                st.secrets["gcp_service_account"], scopes
+            )
+            client = gspread.authorize(creds)
+            ss = client.open(SHEET_NAME)
+            st.session_state.worksheet = ss.worksheet(WORKSHEET_NAME)
+        except Exception as e:
+            st.error(f"Fehler beim Verbinden: {e}")
+            return None
+    return st.session_state.worksheet
 
-@st.cache_data
-def load_prompt_and_config():
-    prompt_content = load_template(PROMPT_TEMPLATE_PATH, DEFAULT_PROMPT_TEMPLATE)
-    system_content = load_template(SYSTEM_PROMPT_PATH, DEFAULT_SYSTEM_PROMPT)
-    return Template(prompt_content), system_content, {'temperature': 0.7, 'max_tokens': 2500}
-
-prompt_template, system_prompt, prompt_config = load_prompt_and_config()
-
-# ---- Hilfsfunktionen ----
-def col_letter(col_num):
-    """Konvertiert Spaltennummer zu Buchstaben"""
-    letter = ''
-    while col_num > 0:
-        col_num, remainder = divmod(col_num - 1, 26)
-        letter = chr(65 + remainder) + letter
-    return letter
-
-@st.cache_data(ttl=300)  # Cache für 5 Minuten
-def load_user_data(user_id):
-    """Lädt nur Daten für einen spezifischen User - mit Cache"""
+def get_sheet(sheet_name):
+    """Holt ein spezifisches Sheet"""
     try:
-        worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
-        if not worksheet:
-            return pd.DataFrame()
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(
+            st.secrets["gcp_service_account"], scopes
+        )
+        client = gspread.authorize(creds)
+        ss = client.open(SHEET_NAME)
+        return ss.worksheet(sheet_name)
+    except:
+        return None
+
+def load_user_workouts():
+    """Lädt nur die Workouts des eingeloggten Users"""
+    worksheet = get_worksheet()
+    if not worksheet:
+        return None
+    
+    try:
+        all_data = worksheet.get_all_values()
+        if len(all_data) < 2:
+            return None
         
-        # Hole Header
-        header = worksheet.row_values(1)
-        if not header:
-            return pd.DataFrame()
+        header = all_data[0]
+        rows = all_data[1:]
         
-        # Finde UserID Spalte
-        try:
-            uid_col = header.index("UserID") + 1
-        except ValueError:
-            st.error("UserID Spalte nicht gefunden")
-            return pd.DataFrame()
+        uid_col = header.index("UserID")
         
-        # Hole alle Zeilen mit dieser UserID
-        all_values = worksheet.get_all_values()
         user_rows = []
-        
-        for i, row in enumerate(all_values[1:], 2):  # Skip header
-            if len(row) >= uid_col and row[uid_col-1] == user_id:
-                user_rows.append(row)
+        for i, row in enumerate(rows):
+            if row[uid_col] == st.session_state.userid:
+                user_rows.append(row + [i + 2])
         
         if not user_rows:
-            return pd.DataFrame()
+            return None
         
-        # Erstelle DataFrame
-        df = pd.DataFrame(user_rows, columns=header)
+        df = pd.DataFrame(user_rows, columns=header + ['_row_num'])
         
-        # Konvertiere Datentypen
         for col in ['Gewicht', 'Wdh', 'Satz-Nr.']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         
-        # Füge Index-Spalte für Referenz hinzu
-        df['_row_index'] = range(len(user_rows))
-        
         return df
         
     except Exception as e:
-        if "quota" in str(e).lower():
-            return None  # Signalisiert Quota-Error
-        st.error(f"Fehler beim Laden der Daten: {e}")
-        return pd.DataFrame()
+        st.error(f"Fehler beim Laden: {e}")
+        return None
 
-def init_session_state():
-    """Initialisiert Session State für lokale Änderungen"""
-    if 'local_changes' not in st.session_state:
-        st.session_state.local_changes = {}
-    if 'unsaved_changes' not in st.session_state:
-        st.session_state.unsaved_changes = False
-    if 'data_loaded' not in st.session_state:
-        st.session_state.data_loaded = False
-
-def track_change(row_id, field, value):
-    """Speichert Änderungen lokal"""
-    if row_id not in st.session_state.local_changes:
-        st.session_state.local_changes[row_id] = {}
-    st.session_state.local_changes[row_id][field] = value
-    st.session_state.unsaved_changes = True
-
-def get_value(row_id, field, default):
-    """Holt Wert aus lokalen Änderungen oder Default"""
-    if row_id in st.session_state.local_changes and field in st.session_state.local_changes[row_id]:
-        return st.session_state.local_changes[row_id][field]
-    return default
-
-def save_all_changes(current_df):
-    """Speichert alle lokalen Änderungen in einem Batch"""
-    if not st.session_state.local_changes:
-        return True
+def save_changes():
+    """Speichert alle lokalen Änderungen"""
+    worksheet = get_worksheet()
+    if not worksheet:
+        return False
     
     try:
-        worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
-        if not worksheet:
-            st.error("Kann nicht auf Google Sheets zugreifen")
-            return False
+        # 1. Lösche markierte Zeilen
+        if st.session_state.rows_to_delete:
+            for row_num in sorted(st.session_state.rows_to_delete, reverse=True):
+                worksheet.delete_rows(row_num)
+            st.session_state.rows_to_delete = []
         
-        batch_data = []
-        header = current_df.columns.tolist()
+        # 2. Füge neue Zeilen hinzu
+        if st.session_state.rows_to_add:
+            for new_row in st.session_state.rows_to_add:
+                worksheet.append_row(new_row)
+            st.session_state.rows_to_add = []
         
-        # Finde die tatsächlichen Zeilennummern
-        all_values = worksheet.get_all_values()
-        uid_col = header.index("UserID")
-        
-        # Erstelle Mapping von DataFrame Index zu Sheet Zeile
-        row_mapping = {}
-        sheet_row = 2  # Start nach Header
-        for i, row in enumerate(all_values[1:]):
-            if len(row) > uid_col and row[uid_col] == st.session_state.userid:
-                if len(row_mapping) < len(current_df):
-                    row_mapping[len(row_mapping)] = sheet_row
-            sheet_row += 1
-        
-        for row_id, changes in st.session_state.local_changes.items():
-            if row_id in row_mapping:
-                sheet_row = row_mapping[row_id]
+        # 3. Update bestehende Zeilen
+        if st.session_state.local_changes:
+            batch_updates = []
+            
+            for (row_num, col_name), value in st.session_state.local_changes.items():
+                if row_num in st.session_state.rows_to_delete:
+                    continue
+                    
+                header = worksheet.row_values(1)
+                col_idx = header.index(col_name) + 1
+                col_letter = chr(64 + col_idx) if col_idx <= 26 else 'A' + chr(64 + col_idx - 26)
                 
-                for field, value in changes.items():
-                    if field in header and field != '_row_index':
-                        col_num = header.index(field) + 1
-                        col_let = col_letter(col_num)
-                        batch_data.append({
-                            'range': f'{col_let}{sheet_row}',
-                            'values': [[str(value)]]
-                        })
+                batch_updates.append({
+                    'range': f'{col_letter}{row_num}',
+                    'values': [[str(value)]]
+                })
+            
+            if batch_updates:
+                worksheet.batch_update(batch_updates)
         
-        # Führe Batch Update aus
-        if batch_data:
-            # Teile in kleinere Batches auf
-            for i in range(0, len(batch_data), 50):  # Kleinere Batches
-                batch_chunk = batch_data[i:i+50]
-                worksheet.batch_update(batch_chunk)
-                time.sleep(1)  # Längere Pause
-        
-        # Clear lokale Änderungen
         st.session_state.local_changes = {}
         st.session_state.unsaved_changes = False
         return True
         
     except Exception as e:
-        if "quota" in str(e).lower():
-            st.error("⏳ API Limit erreicht. Bitte in 1 Minute erneut versuchen.")
-        else:
-            st.error(f"Fehler beim Speichern: {e}")
+        st.error(f"Fehler beim Speichern: {e}")
         return False
 
-# ---- App UI ----
-st.set_page_config(page_title="Workout Tracker", layout="wide", initial_sidebar_state="collapsed")
-
-# Custom CSS
-st.markdown("""
-<style>
-    .stButton > button {
-        width: 100%;
-        padding: 0.25rem 0.5rem;
-        font-size: 0.875rem;
-    }
-    .row-widget.stNumberInput {
-        max-width: 100px;
-    }
-    .save-button {
-        background-color: #28a745;
-        color: white;
-        font-weight: bold;
-    }
-    .unsaved-indicator {
-        background-color: #ffc107;
-        color: black;
-        padding: 0.5rem;
-        border-radius: 0.25rem;
-        margin: 0.5rem 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("Workout Tracker")
-
-# Session State initialisieren
-init_session_state()
-
-# Login
-if 'userid' not in st.session_state:
-    st.session_state.userid = None
-
-if not st.session_state.userid:
-    uid = st.text_input("UserID", type="password")
+def analyze_workout_history(user_id, days=30):
+    """Analysiert die Workout-Historie"""
+    archive_sheet = get_sheet(ARCHIVE_SHEET)
+    if not archive_sheet:
+        return "Keine historischen Daten verfügbar."
     
-    if st.button("Login"):
-        try:
-            worksheet = get_worksheet(SHEET_NAME, WORKSHEET_NAME)
-            if not worksheet:
-                st.error("⏳ Google Sheets momentan nicht erreichbar. Bitte später versuchen.")
-                st.stop()
-            
-            # Prüfe ob UserID existiert
-            header = worksheet.row_values(1)
-            uid_col = header.index("UserID") + 1
-            
-            # Hole nur die UserID Spalte
-            user_ids = worksheet.col_values(uid_col)[1:]  # Skip header
-            valid_ids = [id.strip() for id in user_ids if id.strip()]
-            
-            if uid.strip() in valid_ids:
-                st.session_state.userid = uid.strip()
-                st.success(f"Eingeloggt als {uid.strip()}")
-                st.rerun()
-            else:
-                st.error("UserID nicht gefunden.")
-                
-        except Exception as e:
-            if "quota" in str(e).lower():
-                st.error("⏳ Google Sheets Limit erreicht. Bitte in 1 Minute erneut versuchen.")
-            else:
-                st.error(f"Login-Fehler: {e}")
-    st.stop()
+    try:
+        archive_data = archive_sheet.get_all_records()
+        if not archive_data:
+            return "Keine historischen Daten vorhanden."
+        
+        df = pd.DataFrame(archive_data)
+        user_data = df[df['UserID'] == user_id]
+        
+        if user_data.empty:
+            return "Keine Trainingsdaten vorhanden."
+        
+        summary = []
+        exercises = user_data['Übung'].value_counts()
+        
+        for exercise, count in exercises.items():
+            ex_data = user_data[user_data['Übung'] == exercise]
+            max_weight = ex_data['Gewicht'].max() if 'Gewicht' in ex_data else 0
+            avg_reps = ex_data['Wdh'].mean() if 'Wdh' in ex_data else 0
+            summary.append(f"- {exercise}: Max {max_weight}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
+        
+        return "\n".join(summary[:10])  # Top 10 Übungen
+        
+    except:
+        return "Fehler beim Laden der Historie."
+
+def parse_ai_plan_to_rows(plan_text, user_id):
+    """Konvertiert KI-generierten Plan in Tabellenzeilen"""
+    rows = []
+    current_date = datetime.date.today()
+    
+    lines = plan_text.split('\n')
+    current_workout = ""
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        
+        # Erkenne Workout-Namen (z.B. "Oberkörper A:")
+        if ':' in line and not line.startswith('-') and not line.startswith('•'):
+            potential_workout = line.split(':')[0].strip()
+            if len(potential_workout) < 50 and not any(char.isdigit() and 'kg' in line for char in line):
+                current_workout = potential_workout
+                continue
+        
+        # Erkenne Übungen
+        if line.startswith('-') or line.startswith('•'):
+            try:
+                parts = line[1:].strip().split(':')
+                if len(parts) >= 2:
+                    exercise_name = parts[0].strip()
+                    details = parts[1].strip()
+                    
+                    # Defaults
+                    sets = 3
+                    weight = 0
+                    reps = "10"
+                    
+                    # Extrahiere Details
+                    sets_match = re.search(r'(\d+)\s*[Ss]ätze', details)
+                    if sets_match:
+                        sets = int(sets_match.group(1))
+                    
+                    weight_match = re.search(r'(\d+)\s*kg', details)
+                    if weight_match:
+                        weight = int(weight_match.group(1))
+                    
+                    reps_match = re.search(r'(\d+[-\d]*)\s*[Ww]dh', details)
+                    if reps_match:
+                        reps = reps_match.group(1)
+                    
+                    # Erstelle Zeilen für jeden Satz
+                    for satz in range(1, sets + 1):
+                        rows.append({
+                            'UserID': user_id,
+                            'Datum': current_date.isoformat(),
+                            'Name': '',
+                            'Workout Name': current_workout or f"Workout {len(rows)//10 + 1}",
+                            'Übung': exercise_name,
+                            'Satz-Nr.': satz,
+                            'Gewicht': weight,
+                            'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
+                            'Einheit': 'kg',
+                            'Typ': '',
+                            'Erledigt': 'FALSE',
+                            'Mitteilung an den Trainer': '',
+                            'Hinweis vom Trainer': ''
+                        })
+            except:
+                continue
+    
+    return rows
 
 # ---- Hauptnavigation ----
-tab1, tab2, tab3 = st.tabs(["Training", "Neuer Plan", "Historie"])
+tab1, tab2, tab3, tab4 = st.tabs(["Training", "Neue Übung", "Neuer Plan", "Daten Management"])
 
-# ---- Tab 1: Aktueller Plan ----
+# ---- Tab 1: Training ----
 with tab1:
-    # Ungespeicherte Änderungen Indikator
-    if st.session_state.unsaved_changes:
-        st.markdown('<div class="unsaved-indicator">⚠️ Ungespeicherte Änderungen vorhanden!</div>', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 1, 2])
     
-    # Speichern Button
-    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if st.button("📥 Workouts laden", type="primary"):
+            with st.spinner("Lade Workouts..."):
+                st.session_state.user_data = load_user_workouts()
+                if st.session_state.user_data is not None:
+                    st.success("Workouts geladen!")
+                else:
+                    st.warning("Keine Workouts gefunden")
+    
     with col2:
-        if st.button("💾 **Alle Änderungen speichern**", type="primary", disabled=not st.session_state.unsaved_changes):
-            with st.spinner("Speichere Änderungen..."):
-                current_df = load_user_data(st.session_state.userid)
-                if current_df is not None and not current_df.empty:
-                    if save_all_changes(current_df):
-                        st.success("✅ Alle Änderungen gespeichert!")
-                        load_user_data.clear()  # Cache leeren
-                        time.sleep(1)
-                        st.rerun()
+        if st.button("💾 Speichern", disabled=not st.session_state.unsaved_changes):
+            if save_changes():
+                st.success("Gespeichert!")
+                st.session_state.user_data = load_user_workouts()
     
-    # Lade Daten
-    current_df = load_user_data(st.session_state.userid)
-    
-    if current_df is None:
-        st.error("⏳ Google Sheets Limit erreicht. Bitte warte 1 Minute und lade die Seite neu.")
-        st.stop()
-    
-    if not current_df.empty:
-        # Gruppiere nach Workout
-        workouts = current_df['Workout Name'].unique() if 'Workout Name' in current_df.columns else []
+    if st.session_state.user_data is not None:
+        df = st.session_state.user_data
+        
+        if st.session_state.unsaved_changes:
+            st.warning(f"⚠️ Ungespeicherte Änderungen vorhanden!")
+        
+        workouts = df['Workout Name'].unique()
         
         for workout in workouts:
             st.subheader(workout)
-            workout_data = current_df[current_df['Workout Name'] == workout]
+            workout_data = df[df['Workout Name'] == workout]
             
-            # Gruppiere nach Übung
-            exercises = workout_data['Übung'].unique() if 'Übung' in workout_data.columns else []
+            exercises = workout_data['Übung'].unique()
             
             for exercise in exercises:
-                exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
-                
-                with st.expander(f"{exercise}"):
-                    # Zeige alle Sätze
+                with st.expander(f"**{exercise}**", expanded=True):
+                    exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
+                    
+                    # Trainer-Hinweise
+                    first_row = exercise_data.iloc[0]
+                    trainer_hint = first_row.get('Hinweis vom Trainer', '')
+                    if trainer_hint and trainer_hint.strip():
+                        st.info(f"💬 **Trainer-Hinweis:** {trainer_hint}")
+                    
+                    # Sätze anzeigen
                     for idx, row in exercise_data.iterrows():
-                        st.markdown("---")
+                        row_num = row['_row_num']
                         
-                        # Trainer-Hinweis
-                        trainer_comment = row.get('Hinweis vom Trainer', '')
-                        if trainer_comment and trainer_comment.strip():
-                            st.info(f"💬 Trainer: {trainer_comment}")
+                        if row_num in st.session_state.rows_to_delete:
+                            continue
                         
-                        col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
-                        
-                        row_idx = row['_row_index']  # Verwende den stabilen Index
+                        col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 1, 0.5])
                         
                         with col1:
-                            st.write(f"**Satz {int(row.get('Satz-Nr.', 1))}**")
+                            st.write(f"**Satz {int(row['Satz-Nr.'])}**")
                         
                         with col2:
-                            current_weight = get_value(row_idx, 'Gewicht', float(row.get('Gewicht', 0)))
+                            key = (row_num, 'Gewicht')
+                            current_weight = st.session_state.local_changes.get(key, row['Gewicht'])
+                            
                             new_weight = st.number_input(
                                 "Gewicht (kg)",
-                                value=current_weight,
+                                value=float(current_weight),
                                 step=2.5,
-                                key=f"weight_{row_idx}",
-                                on_change=lambda idx=row_idx, f='Gewicht': track_change(idx, f, st.session_state[f"weight_{idx}"])
+                                key=f"w_{row_num}"
                             )
+                            
+                            if new_weight != row['Gewicht']:
+                                st.session_state.local_changes[key] = new_weight
+                                st.session_state.unsaved_changes = True
                         
                         with col3:
-                            current_reps = get_value(row_idx, 'Wdh', int(row.get('Wdh', 0)))
+                            key = (row_num, 'Wdh')
+                            current_reps = st.session_state.local_changes.get(key, row['Wdh'])
+                            
                             new_reps = st.number_input(
                                 "Wiederholungen",
-                                value=current_reps,
+                                value=int(current_reps),
                                 step=1,
-                                key=f"reps_{row_idx}",
-                                on_change=lambda idx=row_idx, f='Wdh': track_change(idx, f, st.session_state[f"reps_{idx}"])
+                                key=f"r_{row_num}"
                             )
+                            
+                            if new_reps != row['Wdh']:
+                                st.session_state.local_changes[key] = new_reps
+                                st.session_state.unsaved_changes = True
                         
                         with col4:
-                            current_status = get_value(row_idx, 'Erledigt', str(row.get('Erledigt', 'FALSE')).upper())
+                            key = (row_num, 'Erledigt')
+                            current_status = st.session_state.local_changes.get(key, row.get('Erledigt', 'FALSE'))
                             
                             if current_status == 'TRUE':
-                                if st.button("✓ Erledigt", key=f"status_{row_idx}", type="primary"):
-                                    track_change(row_idx, 'Erledigt', 'FALSE')
-                                    st.rerun()
+                                btn_label = "✓"
+                                btn_type = "primary"
                             else:
-                                if st.button("Erledigt", key=f"status_{row_idx}"):
-                                    track_change(row_idx, 'Erledigt', 'TRUE')
-                                    track_change(row_idx, 'Gewicht', new_weight)
-                                    track_change(row_idx, 'Wdh', new_reps)
-                                    st.rerun()
+                                btn_label = "○"
+                                btn_type = "secondary"
+                            
+                            if st.button(btn_label, key=f"done_{row_num}", type=btn_type):
+                                new_status = 'FALSE' if current_status == 'TRUE' else 'TRUE'
+                                st.session_state.local_changes[key] = new_status
+                                st.session_state.local_changes[(row_num, 'Gewicht')] = new_weight
+                                st.session_state.local_changes[(row_num, 'Wdh')] = new_reps
+                                st.session_state.unsaved_changes = True
+                                st.rerun()
                         
-                        # Nachricht an Trainer
-                        current_msg = get_value(row_idx, 'Mitteilung an den Trainer', row.get('Mitteilung an den Trainer', ''))
-                        new_message = st.text_input(
-                            "Nachricht an Trainer",
-                            value=current_msg,
-                            key=f"msg_{row_idx}",
-                            placeholder="z.B. Schulter schmerzt leicht",
-                            on_change=lambda idx=row_idx, f='Mitteilung an den Trainer': track_change(idx, f, st.session_state[f"msg_{idx}"])
+                        with col5:
+                            if st.button("🗑️", key=f"del_{row_num}", help="Satz löschen"):
+                                st.session_state.rows_to_delete.append(row_num)
+                                st.session_state.unsaved_changes = True
+                                st.rerun()
+                    
+                    st.markdown("---")
+                    
+                    # Buttons und Nachricht
+                    col1, col2, col3 = st.columns([1, 1, 2])
+                    
+                    with col1:
+                        if st.button(f"➕ Satz", key=f"add_set_{exercise}_{workout}"):
+                            last_row = exercise_data.iloc[-1]
+                            header = list(df.columns[:-1])
+                            new_row = [''] * len(header)
+                            
+                            for i, col in enumerate(header):
+                                if col == 'Satz-Nr.':
+                                    new_row[i] = str(int(last_row['Satz-Nr.']) + 1)
+                                elif col == 'Erledigt':
+                                    new_row[i] = 'FALSE'
+                                elif col == 'Mitteilung an den Trainer':
+                                    new_row[i] = ''
+                                elif col in last_row:
+                                    new_row[i] = str(last_row[col])
+                            
+                            st.session_state.rows_to_add.append(new_row)
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button(f"🗑️ Übung", key=f"del_ex_{exercise}_{workout}"):
+                            # Lösche alle Sätze dieser Übung
+                            for _, row in exercise_data.iterrows():
+                                if row['_row_num'] not in st.session_state.rows_to_delete:
+                                    st.session_state.rows_to_delete.append(row['_row_num'])
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
+                    
+                    with col3:
+                        first_row_num = exercise_data.iloc[0]['_row_num']
+                        msg_key = (first_row_num, 'Mitteilung an den Trainer')
+                        current_msg = st.session_state.local_changes.get(msg_key, exercise_data.iloc[0].get('Mitteilung an den Trainer', ''))
+                        
+                        new_msg = st.text_input(
+                            "💭 Nachricht an Trainer",
+                            value=current_msg or '',
+                            key=f"msg_{exercise}_{workout}",
+                            placeholder="z.B. Schulter zwickt bei dieser Übung"
                         )
-        
-        # Reminder am Ende
-        if st.session_state.unsaved_changes:
-            st.warning("⚠️ Vergiss nicht, deine Änderungen zu speichern!")
-            
+                        
+                        if new_msg != exercise_data.iloc[0].get('Mitteilung an den Trainer', ''):
+                            for _, row in exercise_data.iterrows():
+                                st.session_state.local_changes[(row['_row_num'], 'Mitteilung an den Trainer')] = new_msg
+                            st.session_state.unsaved_changes = True
+                    
+                    # Fortschritt
+                    completed_sets = sum(1 for _, r in exercise_data.iterrows() 
+                                       if st.session_state.local_changes.get((r['_row_num'], 'Erledigt'), r.get('Erledigt', 'FALSE')) == 'TRUE')
+                    total_sets = len(exercise_data) - len([r for r in st.session_state.rows_to_delete if r in exercise_data['_row_num'].values])
+                    
+                    progress_text = f"📊 {completed_sets}/{total_sets} Sätze erledigt"
+                    if completed_sets == total_sets and total_sets > 0:
+                        st.success(f"✅ {progress_text}")
+                    else:
+                        st.caption(progress_text)
     else:
-        st.info("Kein aktiver Trainingsplan. Erstelle einen neuen Plan im Tab 'Neuer Plan'!")
+        st.info("Klicke auf '📥 Workouts laden' um deine Trainingsdaten zu sehen")
 
-# ---- Tab 2: Neuen Plan erstellen ----
+# ---- Tab 2: Neue Übung ----
 with tab2:
-    st.header("Neuen Trainingsplan erstellen")
+    st.subheader("Neue Übung hinzufügen")
+    
+    if st.session_state.user_data is not None:
+        df = st.session_state.user_data
+        workouts = df['Workout Name'].unique()
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            workout_name = st.selectbox("Workout auswählen", workouts)
+            exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
+            num_sets = st.number_input("Anzahl Sätze", min_value=1, value=3)
+        
+        with col2:
+            default_weight = st.number_input("Start-Gewicht (kg)", min_value=0.0, value=20.0, step=2.5)
+            default_reps = st.number_input("Wiederholungen", min_value=1, value=10)
+        
+        if st.button("Übung hinzufügen", type="primary"):
+            if exercise_name and workout_name:
+                worksheet = get_worksheet()
+                header = worksheet.row_values(1)
+                
+                for satz in range(1, num_sets + 1):
+                    new_row = [''] * len(header)
+                    for i, col in enumerate(header):
+                        if col == 'UserID':
+                            new_row[i] = st.session_state.userid
+                        elif col == 'Datum':
+                            new_row[i] = datetime.date.today().isoformat()
+                        elif col == 'Workout Name':
+                            new_row[i] = workout_name
+                        elif col == 'Übung':
+                            new_row[i] = exercise_name
+                        elif col == 'Satz-Nr.':
+                            new_row[i] = str(satz)
+                        elif col == 'Gewicht':
+                            new_row[i] = str(default_weight)
+                        elif col == 'Wdh':
+                            new_row[i] = str(default_reps)
+                        elif col == 'Erledigt':
+                            new_row[i] = 'FALSE'
+                        elif col == 'Einheit':
+                            new_row[i] = 'kg'
+                    
+                    st.session_state.rows_to_add.append(new_row)
+                
+                st.session_state.unsaved_changes = True
+                st.success(f"'{exercise_name}' wurde hinzugefügt! Klicke auf 'Speichern' um die Änderungen zu übernehmen.")
+    else:
+        st.info("Lade zuerst deine Workouts im 'Training' Tab")
+
+# ---- Tab 3: Neuer Plan ----
+with tab3:
+    st.subheader("Neuen Trainingsplan erstellen")
     
     if not client:
-        st.error("OpenAI API Key fehlt. Bitte in Streamlit Secrets konfigurieren.")
+        st.error("OpenAI API Key fehlt!")
         st.stop()
     
-    additional_goals = st.text_area("Zusätzliche Ziele/Wünsche (optional)")
-    plan_name = st.text_input("Plan-Name (optional)", placeholder="z.B. Woche 1 - Push/Pull")
+    # Zeige Workout-Historie
+    with st.expander("📊 Deine Trainingshistorie"):
+        history = analyze_workout_history(st.session_state.userid)
+        st.text(history)
     
-    if st.button("Plan erstellen", type="primary"):
-        with st.spinner("KI erstellt deinen Plan..."):
+    # Zeige Fragebogen-Daten
+    fragebogen_data = {}
+    fragebogen_sheet = get_sheet(FRAGEBOGEN_SHEET)
+    if fragebogen_sheet:
+        try:
+            fb_data = fragebogen_sheet.get_all_records()
+            user_profile = next((r for r in fb_data if r.get('UserID') == st.session_state.userid), {})
+            if user_profile:
+                with st.expander("📋 Deine Profildaten"):
+                    for key, value in user_profile.items():
+                        if key != 'UserID' and value:
+                            st.write(f"**{key}:** {value}")
+                fragebogen_data = user_profile
+        except:
+            pass
+    
+    # Eingabefeld für zusätzliche Wünsche
+    additional_goals = st.text_area(
+        "Zusätzliche Ziele/Wünsche",
+        placeholder="z.B. Fokus auf Oberkörper, mehr Kraftausdauer, Vorbereitung für Wettkampf...",
+        height=100
+    )
+    
+    if st.button("🤖 Plan mit KI erstellen", type="primary"):
+        with st.spinner("KI erstellt deinen personalisierten Plan..."):
             try:
-                # Template-Daten mit Defaults
-                template_data = {
-                    'workout_summary': "Keine historischen Daten",
-                    'additional_goals': additional_goals or "Allgemeine Fitness",
-                    'Fitnesslevel': 'Mittel',
-                    'Ziel': 'Muskelaufbau',
-                    'Verfügbare_Tage': '3',
-                    'Ausrüstung': 'Fitnessstudio'
-                }
+                # Sammle alle Informationen
+                workout_summary = analyze_workout_history(st.session_state.userid)
                 
-                prompt = prompt_template.safe_substitute(template_data)
+                # Erstelle Prompt
+                prompt = f"""
+                Erstelle einen personalisierten Trainingsplan basierend auf:
                 
-                # OpenAI API Aufruf
+                BENUTZERPROFIL:
+                - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
+                - Ziele: {fragebogen_data.get('Ziel', 'Allgemeine Fitness')}
+                - Verfügbare Tage: {fragebogen_data.get('Verfügbare_Tage', '3')}
+                - Ausrüstung: {fragebogen_data.get('Ausrüstung', 'Fitnessstudio')}
+                
+                BISHERIGE LEISTUNGEN:
+                {workout_summary}
+                
+                ZUSÄTZLICHE WÜNSCHE:
+                {additional_goals or 'Keine speziellen Wünsche'}
+                
+                Erstelle einen Wochenplan mit verschiedenen Workouts.
+                """
+                
+                system_prompt = """
+                Erstelle einen strukturierten Trainingsplan mit eindeutigen Workout-Namen.
+                
+                Format:
+                Workout-Name:
+                - Übung: Anzahl Sätze, Gewicht kg, Wiederholungen Wdh
+                
+                Beispiel:
+                Push Day A:
+                - Bankdrücken: 4 Sätze, 80kg, 8-10 Wdh
+                - Schulterdrücken: 3 Sätze, 40kg, 10-12 Wdh
+                
+                Wichtig: Jedes Workout braucht einen eindeutigen Namen!
+                """
+                
+                # OpenAI API Call
                 response = client.chat.completions.create(
                     model='gpt-4o-mini',
                     messages=[
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=prompt_config.get('temperature', 0.7),
-                    max_tokens=prompt_config.get('max_tokens', 2500)
+                    temperature=0.7,
+                    max_tokens=2000
                 )
                 
                 plan_text = response.choices[0].message.content
                 
-                # Plan anzeigen
+                # Zeige Plan
                 st.success("Plan wurde erstellt!")
-                with st.expander("Plan-Vorschau", expanded=True):
+                with st.expander("📋 Plan-Vorschau", expanded=True):
                     st.text(plan_text)
                 
-                # TODO: Plan aktivieren implementieren
-                
+                # Plan aktivieren Button
+                if st.button("✅ Plan aktivieren und in Google Sheets speichern"):
+                    # Parse Plan
+                    new_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
+                    
+                    if new_rows:
+                        worksheet = get_worksheet()
+                        header = worksheet.row_values(1)
+                        
+                        # Lösche alte Einträge des Users
+                        if st.session_state.user_data is not None:
+                            old_rows = st.session_state.user_data['_row_num'].tolist()
+                            for row_num in sorted(old_rows, reverse=True):
+                                worksheet.delete_rows(row_num)
+                        
+                        # Füge neue Zeilen ein
+                        for row_data in new_rows:
+                            new_row = [''] * len(header)
+                            for i, col_name in enumerate(header):
+                                if col_name in row_data:
+                                    new_row[i] = str(row_data[col_name])
+                            worksheet.append_row(new_row)
+                        
+                        st.success("✅ Neuer Plan wurde aktiviert!")
+                        st.balloons()
+                        
+                        # Clear cache
+                        st.session_state.user_data = None
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Fehler beim Parsen des Plans")
+                        
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")
 
-# ---- Tab 3: Historie ----
-with tab3:
-    st.info("Historie-Funktion wird in der nächsten Version verfügbar sein.")
+# ---- Tab 4: Daten Management ----
+with tab4:
+    st.subheader("Debug & Management")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Cache leeren"):
+            st.session_state.worksheet = None
+            st.session_state.user_data = None
+            st.session_state.local_changes = {}
+            st.session_state.unsaved_changes = False
+            st.session_state.rows_to_delete = []
+            st.session_state.rows_to_add = []
+            st.success("Cache geleert")
+    
+    with col2:
+        if st.button("🔍 Session State anzeigen"):
+            st.json({k: v for k, v in st.session_state.items() if k != 'user_data'})
 
 st.markdown("---")
-st.caption("v4.1 - Optimiert für minimale API Requests mit besserem Error Handling")
+st.caption("v8.0 - Vollständige Version mit KI-Planerstellung")

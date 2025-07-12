@@ -261,7 +261,7 @@ if abgeschickt:
         }
         
         try:
-            response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+            response = requests.post(WEBHOOK_URL, json=payload, timeout=30)
             if response.status_code in [200, 202, 204]:
                 st.success("✅ Daten erfolgreich an Make.com übertragen!")
                 st.balloons()

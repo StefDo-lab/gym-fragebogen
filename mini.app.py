@@ -600,6 +600,7 @@ with tab3:
         activate_plan_with_debug(new_rows)
 else:
     st.error("Konnte keinen Plan aus der KI-Antwort erstellen")
+
                         
             except Exception as e:
                 st.error(f"Fehler: {str(e)}")

@@ -548,7 +548,7 @@ with tab2:
     else:
         st.info("Lade zuerst deine Workouts im 'Training' Tab")
 
-# ---- Tab 3: Neuer Plan (MIT FUNKTIONIERENDER PLANGENERIERUNG) ----
+Copy# ---- Tab 3: Neuer Plan (MIT FUNKTIONIERENDER PLANGENERIERUNG) ----
 with tab3:
     st.subheader("Neuen Trainingsplan erstellen")
     
@@ -671,6 +671,32 @@ with tab3:
                 
                 # Parse neuen Plan
                 new_plan_rows = parse_ai_plan_to_rows(plan_text, st.session_state.userid)
+                
+                # DEBUG: Zeige was geparst wurde
+                with st.expander("🔍 Debug: Parsing-Ergebnis", expanded=True):
+                    st.write(f"Anzahl geparster Zeilen: {len(new_plan_rows)}")
+                    if new_plan_rows:
+                        st.write("**Erste Zeile:**")
+                        st.json(new_plan_rows[0])
+                        st.write("**Letzte Zeile:**")
+                        st.json(new_plan_rows[-1])
+                        
+                        # Zeige Workout-Übersicht
+                        st.write("**Workout-Übersicht:**")
+                        workouts = {}
+                        for row in new_plan_rows:
+                            workout_name = row['Workout Name']
+                            if workout_name not in workouts:
+                                workouts[workout_name] = []
+                            if row['Satz-Nr.'] == 1:  # Nur erste Sätze zählen
+                                workouts[workout_name].append(row['Übung'])
+                        
+                        for workout, exercises in workouts.items():
+                            st.write(f"- {workout}: {len(exercises)} Übungen")
+                    else:
+                        st.error("Keine Zeilen geparst!")
+                        st.write("Plan Text zur Analyse (erste 1000 Zeichen):")
+                        st.text(plan_text[:1000])
                 
                 if new_plan_rows:
                     st.info(f"Plan enthält {len(new_plan_rows)} Sätze")

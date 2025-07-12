@@ -44,7 +44,16 @@ except Exception as e:
     st.error(f"Fehler beim Initialisieren des OpenAI-Clients: {e}")
     client = None
 
-# ---- Login ----
+# ---- Login & Logout ----
+if st.session_state.userid:
+    st.sidebar.info(f"Eingeloggt als: **{st.session_state.userid}**")
+    if st.sidebar.button("Logout"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        st.rerun()
+
 if not st.session_state.userid:
     st.subheader("Login")
     uid = st.text_input("UserID", type="password")
@@ -223,7 +232,10 @@ def analyze_workout_history(user_id):
     return "\n".join(summary[:10])
 
 def parse_ai_plan_to_rows(plan_text, user_id):
-    """Konvertiert einen KI-generierten Textplan in strukturierte Tabellenzeilen."""
+    """
+    Konvertiert einen KI-generierten Textplan in strukturierte Tabellenzeilen.
+    Diese Version unterscheidet strikt zwischen Workout-Titeln und Übungen.
+    """
     rows = []
     current_date = datetime.date.today().isoformat()
     current_workout = "Allgemeines Training"
@@ -231,10 +243,16 @@ def parse_ai_plan_to_rows(plan_text, user_id):
 
     for line in lines:
         line = line.strip()
-        if not line or "hinweise:" in line.lower() or "wichtig:" in line.lower():
+        if not line:
             continue
 
-        # Priorität 1: Ist die Zeile eine Übung?
+        # 1. Ist es ein Workout-Titel? (z.B. **Push Day:**)
+        workout_match = re.match(r'^\*\*(.+?):\*\*', line)
+        if workout_match:
+            current_workout = workout_match.group(1).strip()
+            continue # Gehe zur nächsten Zeile
+
+        # 2. Ist es eine Übung? (z.B. - Bankdrücken: ...)
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
@@ -248,14 +266,13 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                 explanation = ""
 
                 # Extrahiere Erklärung
-                explanation_match = re.search(r'\((Erklärung|Fokus):\s*(.+?)\)', details)
+                explanation_match = re.search(r'\((?:Erklärung|Fokus):\s*(.+?)\)', details)
                 if explanation_match:
-                    explanation = explanation_match.group(2).strip()
-                    # Entferne die Erklärung aus den Details, um das weitere Parsen nicht zu stören
+                    explanation = explanation_match.group(1).strip()
                     details = details.replace(explanation_match.group(0), '').strip()
 
                 # Extrahiere Sätze
-                sets_match = re.search(r'(\d+)\s*(x|[Ss]ätze|[Ss]ets)', details)
+                sets_match = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', details)
                 if sets_match:
                     sets = int(sets_match.group(1))
 
@@ -267,7 +284,7 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                     weight = 0.0
 
                 # Extrahiere Wiederholungen
-                reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
+                reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match:
                     reps = reps_match.group(1).strip()
 
@@ -284,15 +301,6 @@ def parse_ai_plan_to_rows(plan_text, user_id):
                 st.warning(f"⚠️ Parsing-Fehler bei Übung: '{line}'. Fehler: {e}")
             
             continue
-
-        # Priorität 2: Wenn es keine Übung ist, ist es ein Workout-Titel?
-        if ":" in line:
-            # Ignoriere reine Tag-Marker
-            if re.match(r'^\*?Tag\s*\d+\*?:\s*$', line, re.IGNORECASE):
-                continue
-            potential_workout_name = line.replace('*', '').split(':', 1)[0].strip()
-            if potential_workout_name:
-                current_workout = potential_workout_name
 
     return rows
 
@@ -332,10 +340,13 @@ with tab1:
             exercises = workout_data['Übung'].unique()
             
             for exercise in exercises:
+                # Ignoriere leere Übungsnamen, die durch fehlerhaftes Parsen entstehen könnten
+                if not exercise or pd.isna(exercise):
+                    continue
+
                 with st.expander(f"**{exercise}**", expanded=False):
                     exercise_data = workout_data[workout_data['Übung'] == exercise].sort_values('Satz-Nr.')
                     
-                    # Zeige den Hinweis (jetzt mit Erklärung) nur einmal pro Übung an
                     trainer_hint = exercise_data.iloc[0].get('Hinweis vom Trainer', '')
                     if trainer_hint and trainer_hint.strip():
                         st.info(f"💡 **Fokus:** {trainer_hint}")
@@ -501,11 +512,10 @@ with tab3:
         {history_summary}
 
         **ANWEISUNGEN FÜR DAS AUSGABEFORMAT (SEHR WICHTIG):**
-        1. Jeder Workout-Tag MUSS mit einem Titel beginnen, der mit einem Doppelpunkt endet. Beispiel: `**Tag 1: Push Day:**`
-        2. Berücksichtige explizit den Wunsch nach einem bestimmten Split (z.B. Push/Pull/Beine), falls in den Wünschen angegeben.
-        3. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen.
-        4. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
-        5. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
+        1. Jeder Workout-Tag MUSS mit einem Titel im Format `**Workout-Name:**` beginnen. Verwende funktionale Namen wie "Push Day", "Pull Day", "Ganzkörper A" etc. KEINE "Tag 1" Marker.
+        2. Jede Übung für diesen Tag MUSS in einer neuen Zeile stehen und mit einem Bindestrich beginnen.
+        3. Das Format für jede Übung MUSS exakt so aussehen: `- Übungsname: X Sätze, Y-Z Wdh, W kg (Fokus: Kurze Erklärung der Übung)`
+        4. Füge am Ende KEINE allgemeinen Hinweise, Zusammenfassungen oder zusätzliche Erklärungen hinzu. Gib NUR die Workout-Titel und die Übungslisten aus.
         """
         with st.spinner("KI analysiert deine Daten und erstellt einen personalisierten Plan..."):
             try:
@@ -530,8 +540,10 @@ with tab3:
             st.warning("**Achtung:** Das Aktivieren löscht alle deine aktuellen, nicht archivierten Workouts!")
             if st.button("✅ Diesen Plan aktivieren", type="primary"):
                 with st.spinner("Aktiviere neuen Plan..."):
-                    if df is not None and not df.empty:
-                        st.session_state.rows_to_delete.extend(df['_row_num'].tolist())
+                    # Sicheres Laden der aktuellen Daten des Users
+                    current_user_df = load_user_workouts()
+                    if current_user_df is not None and not current_user_df.empty:
+                        st.session_state.rows_to_delete.extend(current_user_df['_row_num'].tolist())
                     
                     worksheet = get_main_worksheet()
                     header = worksheet.row_values(1)

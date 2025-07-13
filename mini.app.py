@@ -38,8 +38,13 @@ init_session_state()
 
 # ---- OpenAI Setup ----
 try:
-    openai_key = st.secrets.get("openai_api_key", None)
-    client = OpenAI(api_key=openai_key) if openai_key else None
+    # Korrigierte Art, auf Streamlit Secrets zuzugreifen
+    if "openai_api_key" in st.secrets:
+        openai_key = st.secrets["openai_api_key"]
+        client = OpenAI(api_key=openai_key)
+    else:
+        st.warning("OpenAI API Key nicht in den Secrets gefunden.")
+        client = None
 except Exception as e:
     st.error(f"Fehler beim Initialisieren des OpenAI-Clients: {e}")
     client = None

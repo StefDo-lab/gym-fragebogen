@@ -83,7 +83,7 @@ def get_gspread_client():
         return None
 
 def get_sheet_data(sheet_name):
-    """Fetches all data from a worksheet. IMPORTANT: No caching for critical data."""
+    """Fetches all data from a worksheet. No Caching to ensure fresh data."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None

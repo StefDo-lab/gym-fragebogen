@@ -50,8 +50,6 @@ if st.session_state.userid:
     if st.sidebar.button("Logout"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
-        st.cache_data.clear()
-        st.cache_resource.clear()
         st.rerun()
 
 if not st.session_state.userid:
@@ -66,9 +64,8 @@ if not st.session_state.userid:
     st.stop()
 
 # ---- Google Sheets Connection & Data Logic ----
-@st.cache_resource
 def get_gspread_client():
-    """Establishes and caches an authorized connection to Google Sheets."""
+    """Establishes an authorized connection to Google Sheets."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -83,7 +80,7 @@ def get_gspread_client():
         return None
 
 def get_sheet_data(sheet_name):
-    """Fetches all data from a worksheet. IMPORTANT: No caching for critical data."""
+    """Fetches all data from a worksheet."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None
@@ -140,7 +137,6 @@ def load_user_workouts():
     Loads and filters the workouts of the logged-in user.
     Only loads the plan with the most recent timestamp to avoid showing old data.
     """
-    st.cache_data.clear()
     all_data = get_sheet_data(WORKSHEET_NAME)
     if all_data is None: return None
     if len(all_data) < 2: return pd.DataFrame()
@@ -159,10 +155,11 @@ def load_user_workouts():
     
     if not user_rows: return pd.DataFrame(columns=df_columns)
 
-    # Find the latest timestamp among the user's workouts
-    latest_timestamp = max(row[date_col_idx] for row in user_rows if len(row) > date_col_idx and row[date_col_idx])
-    
-    # Filter for rows that match the latest timestamp
+    valid_timestamps = [row[date_col_idx] for row in user_rows if len(row) > date_col_idx and row[date_col_idx]]
+    if not valid_timestamps:
+        return pd.DataFrame(user_rows, columns=df_columns)
+
+    latest_timestamp = max(valid_timestamps)
     latest_plan_rows = [row for row in user_rows if len(row) > date_col_idx and row[date_col_idx] == latest_timestamp]
 
     df = pd.DataFrame(latest_plan_rows, columns=df_columns)
@@ -223,7 +220,6 @@ def save_changes():
         st.session_state.local_changes = {}
         st.session_state.unsaved_changes = False
         st.session_state.user_data = None
-        st.cache_data.clear()
         return True, "Änderungen erfolgreich gespeichert!"
         
     except gspread.exceptions.APIError as e:

@@ -50,6 +50,8 @@ if st.session_state.userid:
     if st.sidebar.button("Logout"):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
+        st.cache_data.clear()
+        st.cache_resource.clear()
         st.rerun()
 
 if not st.session_state.userid:
@@ -64,8 +66,9 @@ if not st.session_state.userid:
     st.stop()
 
 # ---- Google Sheets Connection & Data Logic ----
+@st.cache_resource
 def get_gspread_client():
-    """Establishes an authorized connection to Google Sheets."""
+    """Establishes and caches an authorized connection to Google Sheets."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -80,7 +83,7 @@ def get_gspread_client():
         return None
 
 def get_sheet_data(sheet_name):
-    """Fetches all data from a worksheet."""
+    """Fetches all data from a worksheet. IMPORTANT: No caching for critical data."""
     try:
         gspread_client = get_gspread_client()
         if not gspread_client: return None

@@ -109,14 +109,31 @@ def get_main_worksheet():
         return None
 
 def get_user_profile(user_id):
-    """Fetches the user profile from the questionnaire sheet."""
+    """Fetches and filters the user profile from the questionnaire sheet."""
     all_fb_data = get_sheet_data(FRAGEBOGEN_SHEET)
-    if all_fb_data:
-        header = all_fb_data[0]
-        records = [dict(zip(header, row)) for row in all_fb_data[1:]]
-        user_profile = next((r for r in records if r.get('UserID', '').strip() == user_id), {})
-        return user_profile
-    return {}
+    if not all_fb_data:
+        return {}
+        
+    header = all_fb_data[0]
+    records = [dict(zip(header, row)) for row in all_fb_data[1:]]
+    user_profile = next((r for r in records if r.get('UserID', '').strip() == user_id), {})
+
+    relevant_keys = [
+        "Vorname", "Nachname", "Geschlecht", "Größe (cm)", "Gewicht (kg)", 
+        "Körperfettanteil (%)", "Krafttraining-Erfahrung", "Trainingsziele", 
+        "Ziel-Details", "OP letzte 12-18 Monate", "OP-Details", 
+        "Ausstrahlende Schmerzen", "Schmerz-Details", "Bandscheibenvorfall letzte 6-12 Monate",
+        "Bandscheiben-Details", "Sonstige Gesundheitsprobleme", "Konkrete Ziele", 
+        "Gesundheitszustand", "Einschränkungen", "Schmerzen/Beschwerden", "Stresslevel", 
+        "Schlafdauer (h)", "Ernährung", "Motivationslevel", "Trainingshäufigkeit (pro Woche)"
+    ]
+    
+    filtered_profile = {key: user_profile.get(key) for key in relevant_keys if user_profile.get(key)}
+    
+    filtered_profile['FullName'] = f"{user_profile.get('Vorname', '')} {user_profile.get('Nachname', '')}".strip()
+    
+    return filtered_profile
+
 
 def load_user_workouts():
     """Loads and filters the workouts of the logged-in user."""
@@ -212,29 +229,33 @@ def save_changes():
 def analyze_workout_history(user_id):
     """Analyzes the workout history from the archive."""
     all_data = get_sheet_data(ARCHIVE_SHEET)
-    if not all_data: return "Keine Archiv-Daten verfügbar."
+    if not all_data or len(all_data) < 2: return "Keine Archiv-Daten verfügbar.", None
     
     header = all_data[0]
     records = [dict(zip(header, row)) for row in all_data[1:]]
     
     user_data_list = [r for r in records if r.get('UserID', '').strip() == user_id]
-    if not user_data_list: return "Keine Trainingshistorie für diesen User gefunden."
+    if not user_data_list: return "Keine Trainingshistorie für diesen User gefunden.", None
     
     df = pd.DataFrame(user_data_list)
-    summary = []
+    # Data cleaning
     for col in ['Gewicht', 'Wdh']:
-         if col in df.columns:
+        if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+    df['Datum'] = pd.to_datetime(df['Datum'], errors='coerce')
+    df.dropna(subset=['Datum'], inplace=True)
 
-    exercises = df['Übung'].value_counts()
+    summary = []
+    exercises = df['Übung'].unique()
     
-    for exercise, count in exercises.items():
+    for exercise in exercises:
         ex_data = df[df['Übung'] == exercise]
         max_weight = ex_data['Gewicht'].max()
         avg_reps = ex_data['Wdh'].mean()
+        count = len(ex_data.groupby('Datum'))
         summary.append(f"- {exercise}: Max {max_weight:.1f}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
     
-    return "\n".join(summary[:10])
+    return "\n".join(summary), df
 
 def parse_ai_plan_to_rows(plan_text, user_id, user_name):
     """
@@ -247,16 +268,13 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
 
     for line in lines:
         line = line.strip()
-        if not line:
-            continue
+        if not line: continue
 
-        # 1. Is it a Workout Title? (e.g., **Push Day:**)
         workout_match = re.match(r'^\*\*(.+?):\*\*', line)
         if workout_match:
             current_workout = workout_match.group(1).strip()
             continue
 
-        # 2. Is it an Exercise? (e.g., - Bench Press: ...)
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
@@ -301,7 +319,7 @@ if 'user_data' not in st.session_state or st.session_state.user_data is None:
     st.session_state.user_data = load_user_workouts()
 
 df = st.session_state.user_data
-tab1, tab2, tab3, tab4 = st.tabs(["💪 Training", "➕ Neue Übung", "🤖 Neuer Plan", "⚙️ Management"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["💪 Training", "➕ Neue Übung", "🤖 Neuer Plan", "📈 Analyse", "⚙️ Management"])
 
 # ---- Tab 1: Training ----
 with tab1:
@@ -389,13 +407,22 @@ with tab1:
                     action_cols = st.columns([1, 1, 2])
                     with action_cols[0]:
                         if st.button(f"➕ Satz", key=f"add_set_{exercise}_{workout}"):
-                            # Logic for adding a set
-                            pass
+                            last_row = exercise_data.iloc[-1]
+                            header = df.columns.drop('_row_num').tolist()
+                            new_row_dict = {col: last_row.get(col, '') for col in header}
+                            new_row_dict['Satz-Nr.'] = int(last_row['Satz-Nr.']) + 1
+                            new_row_dict['Erledigt'] = 'FALSE'
+                            st.session_state.rows_to_add.append([str(new_row_dict.get(col, '')) for col in header])
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
                     
                     with action_cols[1]:
                         if st.button(f"❌ Übung", key=f"del_ex_{exercise}_{workout}"):
-                            # Logic for deleting an exercise
-                            pass
+                            for r_num in exercise_data['_row_num']:
+                                if r_num not in st.session_state.rows_to_delete:
+                                    st.session_state.rows_to_delete.append(r_num)
+                            st.session_state.unsaved_changes = True
+                            st.rerun()
 
     elif df is not None:
         st.info("Du hast aktuell keine geplanten Workouts.")
@@ -407,7 +434,7 @@ with tab2:
     st.subheader("Neue Übung manuell hinzufügen")
     if df is not None:
         user_profile = get_user_profile(st.session_state.userid)
-        user_name = user_profile.get("Name", st.session_state.userid)
+        user_name = user_profile.get("FullName", st.session_state.userid)
         
         existing_workouts = list(df['Workout Name'].unique())
         
@@ -454,13 +481,14 @@ with tab3:
         st.stop()
 
     with st.expander("Deine Daten für die KI (bitte prüfen)", expanded=True):
-        history_summary = analyze_workout_history(st.session_state.userid)
+        # Always fetch fresh data for the AI
+        history_summary, _ = analyze_workout_history(st.session_state.userid)
         st.text_area("Gefundene Trainingshistorie:", value=history_summary, height=150, disabled=True)
         
         fragebogen_data = get_user_profile(st.session_state.userid)
         if fragebogen_data:
             st.info("Dein Profil wurde gefunden und wird verwendet:")
-            st.json({k: v for k, v in fragebogen_data.items() if k != 'UserID' and v})
+            st.json({k: v for k, v in fragebogen_data.items() if k != 'FullName'})
         else:
             st.warning("Kein Profil für deine UserID gefunden. Es werden Standardwerte verwendet.")
 
@@ -477,17 +505,13 @@ with tab3:
         Erstelle einen detaillierten und strukturierten wöchentlichen Trainingsplan.
 
         **Benutzerprofil & Ziele:**
-        - Fitnesslevel: {fragebogen_data.get('Fitnesslevel', 'Mittel')}
-        - Hauptziel: {fragebogen_data.get('Ziel', 'Muskelaufbau')}
-        - Verfügbare Tage pro Woche: {fragebogen_data.get('Verfügbare_Tage', '3')}
-        - Ausrüstung: {fragebogen_data.get('Ausrüstung', 'Fitnessstudio')}
-        - Spezifische Wünsche: {additional_goals or "Allgemeine Fitness verbessern"}
+        {fragebogen_data}
 
         **Bisherige Leistungen (Zusammenfassung):**
         {history_summary}
 
         **HARD CONSTRAINTS (MUST be followed):**
-        1. **Number of Workouts:** Create EXACTLY {fragebogen_data.get('Verfügbare_Tage', '3')} workout days. No more, no less.
+        1. **Number of Workouts:** Create EXACTLY {fragebogen_data.get('Trainingshäufigkeit (pro Woche)', '3')} workout days. No more, no less.
         2. **Workout Names:** Each workout day MUST start with a title in the format `**Workout-Name:**` (e.g., `**Push Day:**`). Use functional and UNIQUE names (e.g., "Oberkörper A", "Oberkörper B").
         3. **Split:** Strictly follow the requested split from 'Spezifische Wünsche' if provided (e.g., Push/Pull/Legs).
         4. **Weights:** {weight_instruction}
@@ -498,7 +522,7 @@ with tab3:
             try:
                 response = client.chat.completions.create(model='gpt-4o-mini', messages=[{"role": "user", "content": prompt}], temperature=0.6, max_tokens=2000)
                 st.session_state.plan_text = response.choices[0].message.content
-                user_name = fragebogen_data.get("Name", st.session_state.userid)
+                user_name = fragebogen_data.get("FullName", st.session_state.userid)
                 st.session_state.new_plan_rows = parse_ai_plan_to_rows(st.session_state.plan_text, st.session_state.userid, user_name)
             except Exception as e:
                 st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
@@ -518,7 +542,7 @@ with tab3:
             st.warning("**Achtung:** Das Aktivieren löscht alle deine aktuellen, nicht archivierten Workouts!")
             if st.button("✅ Diesen Plan aktivieren", type="primary"):
                 with st.spinner("Aktiviere neuen Plan..."):
-                    # Securely load the current user's data
+                    # Securely load the current user's data to get correct rows to delete
                     current_user_df = load_user_workouts()
                     if current_user_df is not None and not current_user_df.empty:
                         st.session_state.rows_to_delete.extend(current_user_df['_row_num'].tolist())
@@ -541,8 +565,56 @@ with tab3:
                         st.session_state.rows_to_delete = []
                         st.session_state.rows_to_add = []
 
-# ---- Tab 4: Daten Management ----
+# ---- Tab 4: Analyse ----
 with tab4:
+    st.subheader("📈 Deine Trainingsanalyse")
+    
+    _, archive_df = analyze_workout_history(st.session_state.userid)
+
+    if archive_df is None or archive_df.empty:
+        st.info("Noch keine archivierten Daten für die Analyse vorhanden. Absolviere und archiviere zuerst einige Workouts.")
+    else:
+        # Calculate Volume and 1RM for each set
+        archive_df['Volumen'] = archive_df['Gewicht'] * archive_df['Wdh']
+        archive_df['1RM'] = archive_df['Gewicht'] * (1 + archive_df['Wdh'] / 30)
+        
+        # --- Exercise-specific analysis ---
+        st.markdown("### Analyse pro Übung")
+        exercises = sorted(archive_df['Übung'].unique())
+        selected_exercise = st.selectbox("Wähle eine Übung für die Detailanalyse:", exercises)
+
+        if selected_exercise:
+            exercise_df = archive_df[archive_df['Übung'] == selected_exercise]
+            
+            # Group by date to get daily stats
+            daily_stats = exercise_df.groupby('Datum').agg(
+                Gesamtvolumen=('Volumen', 'sum'),
+                Max_1RM=('1RM', 'max')
+            ).reset_index()
+
+            if not daily_stats.empty:
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("#### Volumen-Progression")
+                    st.line_chart(daily_stats.rename(columns={'Datum':'index'}).set_index('index')['Gesamtvolumen'])
+                
+                with col2:
+                    st.markdown("#### Maximalkraft-Entwicklung (1RM)")
+                    st.line_chart(daily_stats.rename(columns={'Datum':'index'}).set_index('index')['Max_1RM'])
+            else:
+                st.warning(f"Keine Daten für die Übung '{selected_exercise}' gefunden.")
+
+        # --- Overall analysis ---
+        st.markdown("### Gesamtübersicht")
+        weekly_volume = archive_df.set_index('Datum').resample('W-MON', label='left', closed='left')['Volumen'].sum().reset_index()
+        weekly_volume['Woche'] = weekly_volume['Datum'].dt.strftime('%Y-%U')
+        
+        st.markdown("#### Wöchentliches Gesamtvolumen (alle Übungen)")
+        st.bar_chart(weekly_volume.set_index('Woche')['Volumen'])
+
+
+# ---- Tab 5: Daten Management ----
+with tab5:
     st.subheader("Daten & Cache Management")
     if st.button("🔄 App-Cache leeren & neu laden"):
         st.cache_data.clear()

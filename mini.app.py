@@ -136,30 +136,36 @@ def get_user_profile(user_id):
 
 
 def load_user_workouts():
-    """Loads and filters the workouts of the logged-in user."""
+    """
+    Loads and filters the workouts of the logged-in user.
+    Only loads the plan with the most recent timestamp to avoid showing old data.
+    """
     st.cache_data.clear()
     all_data = get_sheet_data(WORKSHEET_NAME)
-    if all_data is None:
-        return None
-    
-    if len(all_data) < 1:
-        return pd.DataFrame()
+    if all_data is None: return None
+    if len(all_data) < 2: return pd.DataFrame()
         
     header = all_data[0]
     df_columns = header + ['_row_num']
     
     try:
         uid_col_idx = header.index("UserID")
-    except ValueError:
-        st.error("Spalte 'UserID' nicht in der Tabelle gefunden.")
+        date_col_idx = header.index("Datum")
+    except ValueError as e:
+        st.error(f"Benötigte Spalte nicht gefunden: {e}")
         return None
 
     user_rows = [row + [i + 2] for i, row in enumerate(all_data[1:]) if len(row) > uid_col_idx and row[uid_col_idx] == st.session_state.userid]
     
-    if not user_rows:
-        return pd.DataFrame(columns=df_columns)
+    if not user_rows: return pd.DataFrame(columns=df_columns)
 
-    df = pd.DataFrame(user_rows, columns=df_columns)
+    # Find the latest timestamp among the user's workouts
+    latest_timestamp = max(row[date_col_idx] for row in user_rows if len(row) > date_col_idx and row[date_col_idx])
+    
+    # Filter for rows that match the latest timestamp
+    latest_plan_rows = [row for row in user_rows if len(row) > date_col_idx and row[date_col_idx] == latest_timestamp]
+
+    df = pd.DataFrame(latest_plan_rows, columns=df_columns)
     
     for col in ['Gewicht', 'Wdh', 'Satz-Nr.']:
         if col in df.columns:
@@ -262,7 +268,7 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
     Converts an AI-generated text plan into structured table rows.
     """
     rows = []
-    current_date = datetime.date.today().isoformat()
+    timestamp = datetime.datetime.now().isoformat()
     current_workout = "Allgemeines Training"
     lines = plan_text.split('\n')
 
@@ -270,11 +276,18 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
         line = line.strip()
         if not line: continue
 
-        workout_match = re.match(r'^\*\*(.+?):\*\*', line)
+        # 1. Is it a Workout Title? (e.g., **Push Day:** or **Workout-Name:** Push Day)
+        workout_match = re.match(r'^\*\*(.*?):\*\*', line)
         if workout_match:
-            current_workout = workout_match.group(1).strip()
+            # Extract the part after a potential "Workout-Name:" label
+            title_part = workout_match.group(1)
+            if "Workout-Name" in title_part:
+                current_workout = title_part.split(":", 1)[-1].strip()
+            else:
+                current_workout = title_part.strip()
             continue
 
+        # 2. Is it an Exercise? (e.g., - Bench Press: ...)
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
@@ -300,7 +313,7 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
 
                 for satz in range(1, sets + 1):
                     rows.append({
-                        'UserID': user_id, 'Datum': current_date, 'Name': user_name,
+                        'UserID': user_id, 'Datum': timestamp, 'Name': user_name,
                         'Workout Name': current_workout, 'Übung': exercise_name,
                         'Satz-Nr.': satz, 'Gewicht': weight,
                         'Wdh': reps.split('-')[0] if '-' in str(reps) else reps,
@@ -459,7 +472,7 @@ with tab2:
                 
                 for satz in range(1, num_sets + 1):
                     new_row_dict = {
-                        'UserID': st.session_state.userid, 'Name': user_name, 'Datum': datetime.date.today().isoformat(),
+                        'UserID': st.session_state.userid, 'Name': user_name, 'Datum': datetime.datetime.now().isoformat(),
                         'Workout Name': workout_name, 'Übung': exercise_name, 'Satz-Nr.': str(satz),
                         'Gewicht': str(default_weight), 'Wdh': str(default_reps), 'Erledigt': 'FALSE',
                         'Einheit': 'kg'

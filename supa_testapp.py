@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+import uuid
 
 # ---- Supabase REST API Setup ----
 SUPABASE_URL = st.secrets["supabase_url"]  # z.B. https://xyzcompany.supabase.co

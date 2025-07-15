@@ -1,4 +1,4 @@
-requests
+supabase-py
 streamlit
 gspread
 oauth2client

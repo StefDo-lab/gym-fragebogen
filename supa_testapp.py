@@ -44,7 +44,7 @@ if st.button("Alle Daten laden"):
 
 if st.button("Neuen Dummy-Datensatz speichern"):
     dummy = {
-        "ID": str(uuid.uuid4()),
+    #    "ID": str(uuid.uuid4()),
         "UserID": "TestUser123",
         "Datum": "2025-07-15",
         "Name": "Test via REST",

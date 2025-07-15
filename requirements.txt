@@ -1,6 +1,6 @@
-supabase-py
 streamlit
 gspread
+requests
 oauth2client
 pandas
 numpy

@@ -8,7 +8,6 @@ SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_service_role_key"]
 SUPABASE_TABLE = "Fragebogen"
 
-
 def insert_into_supabase(data):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -22,7 +21,6 @@ def insert_into_supabase(data):
     )
     return response
 
-
 def send_to_make_webhook(payload):
     WEBHOOK_URL = "https://hook.eu2.make.com/4kt4g15jfxcn7t78coox6accz79ui47f"
     try:
@@ -30,7 +28,6 @@ def send_to_make_webhook(payload):
         return response
     except Exception as e:
         return e
-
 
 st.title("Fitness- und Gesundheitsfragebogen (Supabase + Make)")
 
@@ -62,29 +59,38 @@ with st.form("fitness_fragebogen"):
     weitere_ziele = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
     st.subheader("Medizinische Fragen")
+
     op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-    op_details = st.text_area("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", value="")
+    with st.expander("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", expanded=(op == "Ja")):
+        op_details = st.text_area("OP-Details", value="")
 
     schmerzen = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
-    schmerzen_details = st.text_area("Wo und wie äußern sich die Schmerzen?", value="")
+    with st.expander("Wo und wie äußern sich die Schmerzen?", expanded=(schmerzen == "Ja")):
+        schmerzen_details = st.text_area("Schmerz-Details", value="")
 
     bandscheibe = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
-    bandscheibe_details = st.text_area("Bitte beschreibe den Bandscheibenvorfall:", value="")
+    with st.expander("Bitte beschreibe den Bandscheibenvorfall:", expanded=(bandscheibe == "Ja")):
+        bandscheibe_details = st.text_area("Bandscheiben-Details", value="")
 
     osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
-    osteoporose_details = st.text_area("Bitte beschreibe die Osteoporose:", value="")
+    with st.expander("Bitte beschreibe die Osteoporose:", expanded=(osteoporose == "Ja")):
+        osteoporose_details = st.text_area("Osteoporose-Details", value="")
 
     bluthochdruck = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
-    bluthochdruck_details = st.text_area("Bitte beschreibe den Bluthochdruck:", value="")
+    with st.expander("Bitte beschreibe den Bluthochdruck:", expanded=(bluthochdruck == "Ja")):
+        bluthochdruck_details = st.text_area("Bluthochdruck-Details", value="")
 
     brueche = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
-    brueche_details = st.text_area("Bitte beschreibe die Brüche:", value="")
+    with st.expander("Bitte beschreibe die Brüche:", expanded=(brueche == "Ja")):
+        brueche_details = st.text_area("Bruch-Details", value="")
 
     herz = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
-    herz_details = st.text_area("Bitte beschreibe die Herzprobleme:", value="")
+    with st.expander("Bitte beschreibe die Herzprobleme:", expanded=(herz == "Ja")):
+        herz_details = st.text_area("Herz-Details", value="")
 
     schlaganfall = st.radio("8. Schlaganfall, Epilepsie o. Ä.?", ["Nein", "Ja"])
-    schlaganfall_details = st.text_area("Bitte beschreibe die Erkrankung:", value="")
+    with st.expander("Bitte beschreibe die Erkrankung:", expanded=(schlaganfall == "Ja")):
+        schlaganfall_details = st.text_area("Schlaganfall-Details", value="")
 
     gesundheit = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
     konkrete_ziele = st.text_area("Was sind deine konkreten Ziele beim Training?")

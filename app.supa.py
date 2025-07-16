@@ -49,7 +49,14 @@ def get_user_profile(user_uuid):
 
 def load_user_workouts(user_uuid):
     data = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{user_uuid}")
-    return pd.DataFrame(data) if data else pd.DataFrame()
+    df = pd.DataFrame(data) if data else pd.DataFrame()
+    if "weight" in df.columns:
+        df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0)
+    if "reps" in df.columns:
+        df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
+    if "completed" in df.columns:
+        df["completed"] = df["completed"].fillna(False)
+    return df
 
 def analyze_workout_history(user_uuid):
     data = get_supabase_data(TABLE_ARCHIVE, f"uuid=eq.{user_uuid}")
@@ -137,11 +144,12 @@ with tab1:
                 for exercise_name, exercise_group in workout_group.groupby("exercise"):
                     with st.expander(exercise_name):
                         for idx, row in exercise_group.iterrows():
-                            bg_color = "#d4edda" if row['completed'] else "#ffffff"
+                            completed = bool(row['completed']) if pd.notna(row['completed']) else False
+                            bg_color = "#d4edda" if completed else "#ffffff"
                             with st.container():
                                 st.markdown(f"<div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
                                 st.write(f"**Satz {row['set']}** — Gewicht: {row['weight']} kg — Wdh: {row['reps']}")
-                                if not row['completed']:
+                                if not completed:
                                     if st.button("✅ Erledigt", key=f"done_{row['id']}", help="Satz als erledigt markieren"):
                                         update = {"completed": True}
                                         success = update_supabase_data(TABLE_WORKOUT, update, row['id'])

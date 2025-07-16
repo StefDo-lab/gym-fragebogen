@@ -137,6 +137,7 @@ with tab1:
                 new_weight = st.number_input("Gewicht (kg)", value=row['weight'] if row['weight'] else 0.0, key=f"weight_{row['id']}")
                 new_reps = st.number_input("Wiederholungen", value=int(row['reps']) if row['reps'] else 0, step=1, key=f"reps_{row['id']}")
                 new_completed = st.checkbox("Erledigt", value=row['completed'], key=f"completed_{row['id']}")
+                st.write(f"🔎 Debug: ID = {row['id']}")
                 if st.button("💾 Speichern", key=f"save_{row['id']}"):
                     update = {"weight": new_weight, "reps": new_reps, "completed": new_completed}
                     success = update_supabase_data(TABLE_WORKOUT, update, row['id'])

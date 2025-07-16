@@ -43,16 +43,16 @@ def delete_supabase_data(table, row_id):
     response = requests.delete(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{row_id}", headers=HEADERS)
     return response.status_code == 204
 
-def get_user_profile(user_id):
-    data = get_supabase_data(TABLE_QUESTIONNAIRE, f"userid=eq.{user_id}")
+def get_user_profile(user_uuid):
+    data = get_supabase_data(TABLE_QUESTIONNAIRE, f"uuid=eq.{user_uuid}")
     return data[0] if data else {}
 
-def load_user_workouts(user_id):
-    data = get_supabase_data(TABLE_WORKOUT, f"userid=eq.{user_id}")
+def load_user_workouts(user_uuid):
+    data = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{user_uuid}")
     return pd.DataFrame(data) if data else pd.DataFrame()
 
-def analyze_workout_history(user_id):
-    data = get_supabase_data(TABLE_ARCHIVE, f"userid=eq.{user_id}")
+def analyze_workout_history(user_uuid):
+    data = get_supabase_data(TABLE_ARCHIVE, f"uuid=eq.{user_uuid}")
     if not data:
         return "Keine Archiv-Daten verfügbar.", pd.DataFrame()
     df = pd.DataFrame(data)
@@ -62,7 +62,7 @@ def analyze_workout_history(user_id):
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
     return f"{len(df)} Einträge gefunden.", df
 
-def parse_ai_plan_to_rows(plan_text, user_id, user_name):
+def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
     rows = []
     current_date = datetime.date.today().isoformat()
     current_workout = "Allgemeines Training"
@@ -98,7 +98,7 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
                     reps = reps_match.group(1).strip()
                 for satz in range(1, sets + 1):
                     rows.append({
-                        'userid': user_id, 'date': current_date, 'name': user_name,
+                        'uuid': user_uuid, 'date': current_date, 'name': user_name,
                         'workout': current_workout, 'exercise': exercise_name,
                         'set': satz, 'weight': weight,
                         'reps': reps.split('-')[0] if '-' in str(reps) else reps,

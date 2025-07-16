@@ -112,7 +112,7 @@ if abgeschickt:
     else:
         user_id = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{forename[:3].upper()}"
         data_payload = {
-            "id": str(uuid.uuid4()),
+            "uuid": str(uuid.uuid4()),
             "forename": forename,
             "surename": surename,
             "grade": "",
@@ -156,7 +156,7 @@ if abgeschickt:
             "diet": diet,
             "motivation": motivation,
             "trainFrequency": trainFrequency,
-            "dsgvo": "Ja" if dsgvo else "Nein",
+            "dsgvo": True if dsgvo else False,
             "time": str(datetime.datetime.now()),
             "dummy2": "",
             "dummy3": "",

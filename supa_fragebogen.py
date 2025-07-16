@@ -21,8 +21,17 @@ def insert_into_supabase(data):
     )
     return response
 
+# ---- Webhook Call ----
+def send_to_make_webhook(payload):
+    WEBHOOK_URL = "https://hook.eu2.make.com/4kt4g15jfxcn7t78coox6accz79ui47f"
+    try:
+        response = requests.post(WEBHOOK_URL, json=payload, timeout=30)
+        return response
+    except Exception as e:
+        return e
+
 # ---- Streamlit App ----
-st.title("Fitness- und Gesundheitsfragebogen (Supabase)")
+st.title("Fitness- und Gesundheitsfragebogen (Supabase + Make)")
 
 with st.form("fitness_fragebogen"):
     st.header("Persönliche Daten")
@@ -51,10 +60,6 @@ with st.form("fitness_fragebogen"):
     ])
     weitere_ziele = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
-    # Kurzversion der medizinischen Fragen (vereinfachtes Beispiel)
-    op = st.radio("OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-    op_details = st.text_area("OP-Details", value="")
-
     gesundheit = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
     konkrete_ziele = st.text_area("Was sind deine konkreten Ziele beim Training?")
     gesundheitszustand = st.text_area("Wie ist dein aktueller Gesundheitszustand?")
@@ -75,7 +80,7 @@ if abgeschickt:
     else:
         user_id = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{vorname[:3].upper()}"
 
-        supabase_data = {
+        data_payload = {
             "ID": str(uuid.uuid4()),
             "UserID": user_id,
             "Vorname": vorname,
@@ -93,8 +98,6 @@ if abgeschickt:
             "Ergänzungen": ergaenzung,
             "Trainingsziele": "; ".join(ziele),
             "Ziel-Details": weitere_ziele,
-            "OP letzte 12-18 Monate": op,
-            "OP-Details": op_details,
             "Sonstige Gesundheitsprobleme": gesundheit,
             "Konkrete Ziele": konkrete_ziele,
             "Gesundheitszustand": gesundheitszustand,
@@ -107,12 +110,15 @@ if abgeschickt:
             "DSGVO-Einwilligung": "Ja" if einwilligung else "Nein"
         }
 
-        response = insert_into_supabase(supabase_data)
-
-        if response.status_code in [200, 201]:
+        response_db = insert_into_supabase(data_payload)
+        if response_db.status_code in [200, 201]:
             st.success("✅ Daten erfolgreich in Supabase gespeichert!")
-            st.balloons()
+            response_hook = send_to_make_webhook(data_payload)
+            if isinstance(response_hook, requests.Response) and response_hook.status_code in [200, 202]:
+                st.success("✅ Webhook erfolgreich an Make.com gesendet!")
+            else:
+                st.warning("⚠️ Webhook konnte nicht gesendet werden.")
         else:
-            st.error(f"❌ Fehler beim Supabase-Speichern: {response.status_code} - {response.text}")
+            st.error(f"❌ Fehler beim Supabase-Speichern: {response_db.status_code} - {response_db.text}")
 
         st.info(f"📱 **Deine Benutzer-ID:** `{user_id}`\nBitte speichern oder Screenshot machen!")

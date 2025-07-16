@@ -6,7 +6,7 @@ import uuid
 # ---- Supabase Setup ----
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_service_role_key"]
-SUPABASE_TABLE = "Fragebogen"
+SUPABASE_TABLE = "questionaire"
 
 def insert_into_supabase(data):
     headers = {

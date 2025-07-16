@@ -176,25 +176,35 @@ with tab1:
                                     min_value=0.0,
                                     step=0.5,
                                     key=f"weight_{row['id']}",
-                                    disabled=completed  # Deaktiviert wenn bereits erledigt
+                                    disabled=completed
                                 )
                             
                             with col3:
-                                # Bearbeitbare Wiederholungen
+                                # Bearbeitbare Wiederholungen - mit besserer Fehlerbehandlung
+                                try:
+                                    reps_value = int(row['reps'])
+                                except:
+                                    reps_value = 10  # Standardwert falls Konvertierung fehlschlägt
+                                
                                 new_reps = st.number_input(
                                     "Wiederholungen", 
-                                    value=int(row['reps']) if row['reps'].isdigit() else 10, 
+                                    value=reps_value,
                                     min_value=1,
                                     step=1,
                                     key=f"reps_{row['id']}",
-                                    disabled=completed  # Deaktiviert wenn bereits erledigt
+                                    disabled=completed
                                 )
                             
                             with col4:
-                                # RIR (Reps in Reserve) - falls du das nutzen möchtest
+                                # RIR (Reps in Reserve)
+                                try:
+                                    rir_value = int(row['rirDone']) if row['rirDone'] else 0
+                                except:
+                                    rir_value = 0
+                                
                                 rir_done = st.number_input(
                                     "RIR", 
-                                    value=int(row['rirDone']) if row['rirDone'] else 0,
+                                    value=rir_value,
                                     min_value=0,
                                     max_value=10,
                                     step=1,
@@ -209,7 +219,7 @@ with tab1:
                                     if st.button("✅ Speichern & Erledigt", key=f"save_{row['id']}"):
                                         update = {
                                             "weight": new_weight,
-                                            "reps": new_reps,
+                                            "reps": str(new_reps),  # Als String speichern
                                             "rirDone": rir_done,
                                             "completed": True,
                                             "time": datetime.datetime.now().strftime("%H:%M:%S")

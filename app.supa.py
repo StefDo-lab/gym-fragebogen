@@ -222,11 +222,9 @@ with tab1:
                                                 "weight": new_weight,
                                                 "reps": str(new_reps),
                                                 "rirDone": rir_done,
-                                                "completed": True
+                                                "completed": True,
+                                                "time": datetime.datetime.now(datetime.timezone.utc).isoformat()
                                             }
-                                            # Nur time hinzufügen wenn die Spalte existiert
-                                            if 'time' in df.columns:
-                                                update["time"] = datetime.datetime.now().strftime("%H:%M:%S")
                                             
                                             success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
                                             if success:

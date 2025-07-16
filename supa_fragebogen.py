@@ -33,131 +33,141 @@ st.title("Fitness- und Gesundheitsfragebogen (Supabase + Make)")
 
 with st.form("fitness_fragebogen"):
     st.header("Persönliche Daten")
-    vorname = st.text_input("Vorname *")
-    nachname = st.text_input("Nachname *")
-    geburtsdatum = st.date_input("Geburtsdatum *", value=datetime.date(2000, 1, 1))
+    forename = st.text_input("Vorname *")
+    surename = st.text_input("Nachname *")
+    birthday = st.date_input("Geburtsdatum *", value=datetime.date(2000, 1, 1))
     email = st.text_input("E-Mail-Adresse *")
-    telefon = st.text_input("Telefonnummer *")
-    geschlecht = st.selectbox("Geschlecht", ["Bitte wählen...", "männlich", "weiblich", "divers"])
-    erfassungsdatum = st.date_input("Datum der Erfassung", value=datetime.date.today())
+    phone = st.text_input("Telefonnummer *")
+    gender = st.selectbox("Geschlecht", ["Bitte wählen...", "männlich", "weiblich", "divers"])
+    date = st.date_input("Datum der Erfassung", value=datetime.date.today())
     studio = st.selectbox("Studio *", ["Bitte wählen...", "Studio 1", "Studio 2"])
 
     st.subheader("Körperdaten (optional)")
-    groesse = st.number_input("Größe (cm)", min_value=0, step=1)
-    gewicht = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1)
-    kfa = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1)
+    height = st.number_input("Größe (cm)", min_value=0, step=1)
+    weight = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1)
+    bodyfat = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1)
 
     st.subheader("Gesundheit und Ziele")
-    krafttraining = st.radio("Hast du bereits Erfahrung mit Krafttraining?", ["Ja", "Nein"])
-    ergaenzung = st.text_area("Was möchtest du ergänzen?")
-    ziele = st.multiselect("Deine Trainingsziele", [
+    experience = st.radio("Hast du bereits Erfahrung mit Krafttraining?", ["Ja", "Nein"])
+    additional = st.text_area("Was möchtest du ergänzen?")
+    goals = st.multiselect("Deine Trainingsziele", [
         "Rücken stärken", "Gelenke stabilisieren", "Osteoporoseprävention",
         "Stoffwechsel verbessern", "Haltung verbessern", "Gewebe straffen",
         "Gewicht reduzieren", "Muskelmasse aufbauen", "Vorbereitung auf Sport",
         "Verletzungsprophylaxe", "Leistungssteigerung", "Dysbalancen ausgleichen"
     ])
-    weitere_ziele = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
+    goalDetail = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
     st.subheader("Medizinische Fragen")
 
-    op = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", expanded=(op == "Ja")):
-        op_details = st.text_area("OP-Details", value="")
+    surgery = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", expanded=(surgery == "Ja")):
+        surgeryDetails = st.text_area("OP-Details", value="")
 
-    schmerzen = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
-    with st.expander("Wo und wie äußern sich die Schmerzen?", expanded=(schmerzen == "Ja")):
-        schmerzen_details = st.text_area("Schmerz-Details", value="")
+    radiatingPain = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
+    with st.expander("Wo und wie äußern sich die Schmerzen?", expanded=(radiatingPain == "Ja")):
+        painDetails = st.text_area("Schmerz-Details", value="")
 
-    bandscheibe = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe den Bandscheibenvorfall:", expanded=(bandscheibe == "Ja")):
-        bandscheibe_details = st.text_area("Bandscheiben-Details", value="")
+    discHerniated = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe den Bandscheibenvorfall:", expanded=(discHerniated == "Ja")):
+        discDetails = st.text_area("Bandscheiben-Details", value="")
 
     osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
     with st.expander("Bitte beschreibe die Osteoporose:", expanded=(osteoporose == "Ja")):
-        osteoporose_details = st.text_area("Osteoporose-Details", value="")
+        osteporoseDetails = st.text_area("Osteoporose-Details", value="")
 
-    bluthochdruck = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe den Bluthochdruck:", expanded=(bluthochdruck == "Ja")):
-        bluthochdruck_details = st.text_area("Bluthochdruck-Details", value="")
+    hypertension = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe den Bluthochdruck:", expanded=(hypertension == "Ja")):
+        hypertensionDetails = st.text_area("Bluthochdruck-Details", value="")
 
-    brueche = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe die Brüche:", expanded=(brueche == "Ja")):
-        brueche_details = st.text_area("Bruch-Details", value="")
+    hernia = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe die Brüche:", expanded=(hernia == "Ja")):
+        herniaDetails = st.text_area("Bruch-Details", value="")
 
-    herz = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe die Herzprobleme:", expanded=(herz == "Ja")):
-        herz_details = st.text_area("Herz-Details", value="")
+    cardic = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe die Herzprobleme:", expanded=(cardic == "Ja")):
+        cardicDetails = st.text_area("Herz-Details", value="")
 
-    schlaganfall = st.radio("8. Schlaganfall, Epilepsie o. Ä.?", ["Nein", "Ja"])
-    with st.expander("Bitte beschreibe die Erkrankung:", expanded=(schlaganfall == "Ja")):
-        schlaganfall_details = st.text_area("Schlaganfall-Details", value="")
+    stroke = st.radio("8. Schlaganfall, Epilepsie o. Ä.?", ["Nein", "Ja"])
+    with st.expander("Bitte beschreibe die Erkrankung:", expanded=(stroke == "Ja")):
+        strokeDetails = st.text_area("Schlaganfall-Details", value="")
 
-    gesundheit = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
-    konkrete_ziele = st.text_area("Was sind deine konkreten Ziele beim Training?")
-    gesundheitszustand = st.text_area("Wie ist dein aktueller Gesundheitszustand?")
-    einschraenkungen = st.text_area("Gibt es Einschränkungen bei Bewegung oder Sport?")
+    healthOther = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
+    goalsDetail = st.text_area("Was sind deine konkreten Ziele beim Training?")
+    healthCondition = st.text_area("Wie ist dein aktueller Gesundheitszustand?")
+    restrictions = st.text_area("Gibt es Einschränkungen bei Bewegung oder Sport?")
+    pains = st.text_area("Wo spürst du Schmerzen oder Beschwerden?")
     stresslevel = st.slider("Stresslevel (1 = kein Stress, 10 = extrem gestresst):", 1, 10, 1)
-    schlaf = st.number_input("Durchschnittliche Schlafdauer (in Stunden):", min_value=0.0, step=0.5)
-    ernaehrung = st.text_area("Wie ernährst du dich aktuell?")
+    sleepDuration = st.number_input("Durchschnittliche Schlafdauer (in Stunden):", min_value=0.0, step=0.5)
+    diet = st.text_area("Wie ernährst du dich aktuell?")
     motivation = st.slider("Motivationslevel (1 = null, 10 = hoch):", 1, 10, 5)
-    training_haeufigkeit = st.number_input("Wie oft möchtest du pro Woche trainieren?", min_value=0, step=1)
+    trainFrequency = st.number_input("Wie oft möchtest du pro Woche trainieren?", min_value=0, step=1)
 
-    einwilligung = st.checkbox("Ich stimme der DSGVO-Einwilligung zu")
-
+    dsgvo = st.checkbox("Ich stimme der DSGVO-Einwilligung zu")
     abgeschickt = st.form_submit_button("Fragebogen absenden")
 
 if abgeschickt:
-    if not (vorname and nachname and email and telefon and studio != "Bitte wählen..." and einwilligung):
+    if not (forename and surename and email and phone and studio != "Bitte wählen..." and dsgvo):
         st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
     else:
-        user_id = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{vorname[:3].upper()}"
-
+        user_id = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{forename[:3].upper()}"
         data_payload = {
-            "ID": str(uuid.uuid4()),
-            "UserID": user_id,
-            "Vorname": vorname,
-            "Nachname": nachname,
-            "Geburtsdatum": str(geburtsdatum),
-            "E-Mail-Adresse": email,
-            "Telefonnummer": telefon,
-            "Geschlecht": geschlecht,
-            "Datum der Erfassung": str(erfassungsdatum),
-            "Studio": studio,
-            "Größe (cm)": groesse,
-            "Gewicht (kg)": gewicht,
-            "Körperfettanteil (%)": kfa,
-            "Krafttraining-Erfahrung": krafttraining,
-            "Ergänzungen": ergaenzung,
-            "Trainingsziele": "; ".join(ziele),
-            "Ziel-Details": weitere_ziele,
-            "OP letzte 12-18 Monate": op,
-            "OP-Details": op_details,
-            "Ausstrahlende Schmerzen": schmerzen,
-            "Schmerz-Details": schmerzen_details,
-            "Bandscheibenvorfall letzte 6-12 Monate": bandscheibe,
-            "Bandscheiben-Details": bandscheibe_details,
-            "Osteoporose": osteoporose,
-            "Osteoporose-Details": osteoporose_details,
-            "Bluthochdruck": bluthochdruck,
-            "Bluthochdruck-Details": bluthochdruck_details,
-            "Innere Brüche": brueche,
-            "Bruch-Details": brueche_details,
-            "Herzprobleme": herz,
-            "Herz-Details": herz_details,
-            "Schlaganfall/Epilepsie": schlaganfall,
-            "Schlaganfall-Details": schlaganfall_details,
-            "Sonstige Gesundheitsprobleme": gesundheit,
-            "Konkrete Ziele": konkrete_ziele,
-            "Gesundheitszustand": gesundheitszustand,
-            "Einschränkungen": einschraenkungen,
-            "Stresslevel": stresslevel,
-            "Schlafdauer (h)": schlaf,
-            "Ernährung": ernaehrung,
-            "Motivationslevel": motivation,
-            "Trainingshäufigkeit (pro Woche)": training_haeufigkeit,
-            "DSGVO-Einwilligung": "Ja" if einwilligung else "Nein"
+            "id": str(uuid.uuid4()),
+            "forename": forename,
+            "surename": surename,
+            "grade": "",
+            "gradePost": "",
+            "birthday": str(birthday),
+            "email": email,
+            "phone": phone,
+            "gender": gender,
+            "date": str(date),
+            "studio": studio,
+            "height": height,
+            "weight": weight,
+            "bodyfat": bodyfat,
+            "experience": experience,
+            "additional": additional,
+            "goals": "; ".join(goals),
+            "goalDetail": goalDetail,
+            "surgery": surgery,
+            "surgeryDetails": surgeryDetails,
+            "radiatingPain": radiatingPain,
+            "painDetails": painDetails,
+            "discHerniated": discHerniated,
+            "discDetails": discDetails,
+            "osteoporose": osteoporose,
+            "osteporoseDetails": osteporoseDetails,
+            "hypertension": hypertension,
+            "hypertensionDetails": hypertensionDetails,
+            "hernia": hernia,
+            "herniaDetails": herniaDetails,
+            "cardic": cardic,
+            "cardicDetails": cardicDetails,
+            "stroke": stroke,
+            "strokeDetails": strokeDetails,
+            "healthOther": healthOther,
+            "goalsDetail": goalsDetail,
+            "healthCondition": healthCondition,
+            "restrictions": restrictions,
+            "pains": pains,
+            "stresslevel": stresslevel,
+            "sleepDuration": sleepDuration,
+            "diet": diet,
+            "motivation": motivation,
+            "trainFrequency": trainFrequency,
+            "dsgvo": "Ja" if dsgvo else "Nein",
+            "time": str(datetime.datetime.now()),
+            "dummy2": "",
+            "dummy3": "",
+            "dummy4": "",
+            "dummy5": "",
+            "dummy6": "",
+            "dummy7": "",
+            "dummy8": "",
+            "dummy9": "",
+            "dummy10": ""
         }
-
         response_db = insert_into_supabase(data_payload)
         if response_db.status_code in [200, 201]:
             st.success("✅ Daten erfolgreich in Supabase gespeichert!")
@@ -168,5 +178,4 @@ if abgeschickt:
                 st.warning("⚠️ Webhook konnte nicht gesendet werden.")
         else:
             st.error(f"❌ Fehler beim Supabase-Speichern: {response_db.status_code} - {response_db.text}")
-
         st.info(f"📱 **Deine Benutzer-ID:** `{user_id}`\nBitte speichern oder Screenshot machen!")

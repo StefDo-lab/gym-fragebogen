@@ -132,20 +132,22 @@ with tab1:
     if df.empty:
         st.info("Keine Workouts gefunden.")
     else:
-        grouped = df.groupby(["workout", "exercise"])
-        for (workout_name, exercise_name), group in grouped:
-            with st.expander(f"{workout_name} - {exercise_name}"):
-                for idx, row in group.iterrows():
-                    bg_color = "#d4edda" if row['completed'] else "#ffffff"
-                    with st.container():
-                        st.markdown(f"<div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
-                        st.write(f"**Satz {row['set']}** — Gewicht: {row['weight']} kg — Wdh: {row['reps']}")
-                        if st.button("✅ Erledigt", key=f"done_{row['id']}", help="Satz als erledigt markieren"):
-                            update = {"completed": True}
-                            success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
-                            if success:
-                                st.experimental_rerun()
-                        st.markdown("</div>", unsafe_allow_html=True)
+        for workout_name, workout_group in df.groupby("workout"):
+            with st.expander(workout_name):
+                for exercise_name, exercise_group in workout_group.groupby("exercise"):
+                    with st.expander(exercise_name):
+                        for idx, row in exercise_group.iterrows():
+                            bg_color = "#d4edda" if row['completed'] else "#ffffff"
+                            with st.container():
+                                st.markdown(f"<div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
+                                st.write(f"**Satz {row['set']}** — Gewicht: {row['weight']} kg — Wdh: {row['reps']}")
+                                if not row['completed']:
+                                    if st.button("✅ Erledigt", key=f"done_{row['id']}", help="Satz als erledigt markieren"):
+                                        update = {"completed": True}
+                                        success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
+                                        if success:
+                                            st.experimental_rerun()
+                                st.markdown("</div>", unsafe_allow_html=True)
 
 with tab2:
     st.subheader("Deine Analyse")

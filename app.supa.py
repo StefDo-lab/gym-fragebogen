@@ -7,8 +7,8 @@ import re
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_service_role_key"]
-TABLE_WORKOUT = "workout"
-TABLE_ARCHIVE = "workout_archiv"
+TABLE_WORKOUT = "workouts"
+TABLE_ARCHIVE = "workout_history"
 TABLE_QUESTIONNAIRE = "questionaire"
 
 HEADERS = {
@@ -56,10 +56,10 @@ def analyze_workout_history(user_id):
     if not data:
         return "Keine Archiv-Daten verfügbar.", pd.DataFrame()
     df = pd.DataFrame(data)
-    if "gewicht" in df.columns:
-        df["gewicht"] = pd.to_numeric(df["gewicht"], errors="coerce").fillna(0)
-    if "wdh" in df.columns:
-        df["wdh"] = pd.to_numeric(df["wdh"], errors="coerce").fillna(0)
+    if "weight" in df.columns:
+        df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0)
+    if "reps" in df.columns:
+        df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
     return f"{len(df)} Einträge gefunden.", df
 
 def parse_ai_plan_to_rows(plan_text, user_id, user_name):
@@ -98,19 +98,21 @@ def parse_ai_plan_to_rows(plan_text, user_id, user_name):
                     reps = reps_match.group(1).strip()
                 for satz in range(1, sets + 1):
                     rows.append({
-                        'userid': user_id, 'datum': current_date, 'name': user_name,
-                        'workout_name': current_workout, 'übung': exercise_name,
-                        'satz_nr': satz, 'gewicht': weight,
-                        'wdh': reps.split('-')[0] if '-' in str(reps) else reps,
-                        'einheit': 'kg', 'typ': '', 'erledigt': False,
-                        'mitteilung_an_den_trainer': '', 'hinweis_vom_trainer': explanation
+                        'userid': user_id, 'date': current_date, 'name': user_name,
+                        'workout': current_workout, 'exercise': exercise_name,
+                        'set': satz, 'weight': weight,
+                        'reps': reps.split('-')[0] if '-' in str(reps) else reps,
+                        'unit': 'kg', 'type': '', 'completed': False,
+                        'messageToCoach': '', 'messageFromCoach': explanation,
+                        'rirSuggested': 0, 'rirDone': 0, 'generalStatementFrom': '', 'generalStatementTo': '',
+                        'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
+                        'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
                     })
             except Exception as e:
                 st.warning(f"Parsing-Fehler bei Übung '{line}': {e}")
             continue
     return rows
 
-# ---- Login ----
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
 if not st.session_state.userid:
@@ -122,7 +124,6 @@ if not st.session_state.userid:
 
 st.sidebar.success(f"Eingeloggt als {st.session_state.userid}")
 
-# ---- Tabs ----
 tab1, tab2 = st.tabs(["💪 Training", "📈 Analyse"])
 
 with tab1:

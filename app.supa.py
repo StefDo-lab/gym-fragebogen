@@ -132,7 +132,18 @@ with tab1:
     if df.empty:
         st.info("Keine Workouts gefunden.")
     else:
-        st.dataframe(df)
+        for idx, row in df.iterrows():
+            with st.expander(f"{row['workout']} - {row['exercise']} - Satz {row['set']}"):
+                new_weight = st.number_input("Gewicht (kg)", value=row['weight'] if row['weight'] else 0.0, key=f"weight_{row['id']}")
+                new_reps = st.number_input("Wiederholungen", value=int(row['reps']) if row['reps'] else 0, step=1, key=f"reps_{row['id']}")
+                new_completed = st.checkbox("Erledigt", value=row['completed'], key=f"completed_{row['id']}")
+                if st.button("💾 Speichern", key=f"save_{row['id']}"):
+                    update = {"weight": new_weight, "reps": new_reps, "completed": new_completed}
+                    success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
+                    if success:
+                        st.success("Änderungen gespeichert")
+                    else:
+                        st.error("Fehler beim Speichern")
 
 with tab2:
     st.subheader("Deine Analyse")

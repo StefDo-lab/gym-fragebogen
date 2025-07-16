@@ -37,6 +37,8 @@ def insert_supabase_data(table, data):
 
 def update_supabase_data(table, updates, row_id):
     response = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{row_id}", headers=HEADERS, json=updates)
+    if response.status_code != 204:
+        st.error(f"Update-Fehler: {response.text}")
     return response.status_code == 204
 
 def delete_supabase_data(table, row_id):
@@ -140,116 +142,118 @@ with tab1:
         st.info("Keine Workouts gefunden.")
     else:
         for workout_name, workout_group in df.groupby("workout"):
-            with st.expander(workout_name, expanded=True):
+            with st.expander(f"🏋️ {workout_name}", expanded=True):
                 for exercise_name, exercise_group in workout_group.groupby("exercise"):
-                    st.markdown(f"### {exercise_name}")
-                    
-                    # Nachricht vom Coach anzeigen, falls vorhanden
-                    coach_msg = exercise_group.iloc[0]['messageFromCoach']
-                    if coach_msg and coach_msg.strip():
-                        st.info(f"💬 Hinweis vom Coach: {coach_msg}")
-                    
-                    for idx, row in exercise_group.iterrows():
-                        completed = row['completed']
-                        bg_color = "#d4edda" if completed else "#f8f9fa"
+                    with st.expander(f"💪 {exercise_name}", expanded=False):
+                        # Nachricht vom Coach anzeigen, falls vorhanden
+                        coach_msg = exercise_group.iloc[0]['messageFromCoach']
+                        if coach_msg and coach_msg.strip():
+                            st.info(f"💬 Hinweis vom Coach: {coach_msg}")
                         
-                        with st.container():
-                            st.markdown(
-                                f"""<div style='background-color: {bg_color}; 
-                                padding: 15px; 
-                                border-radius: 8px; 
-                                margin-bottom: 10px;
-                                border: 1px solid {"#c3e6cb" if completed else "#dee2e6"};'>""", 
-                                unsafe_allow_html=True
+                        for idx, row in exercise_group.iterrows():
+                            completed = row['completed']
+                            bg_color = "#d4edda" if completed else "#f8f9fa"
+                            
+                            with st.container():
+                                st.markdown(
+                                    f"""<div style='background-color: {bg_color}; 
+                                    padding: 15px; 
+                                    border-radius: 8px; 
+                                    margin-bottom: 10px;
+                                    border: 1px solid {"#c3e6cb" if completed else "#dee2e6"};'>""", 
+                                    unsafe_allow_html=True
+                                )
+                                
+                                col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 2])
+                                
+                                with col1:
+                                    st.markdown(f"**Satz {row['set']}**")
+                                
+                                with col2:
+                                    # Bearbeitbares Gewicht
+                                    new_weight = st.number_input(
+                                        "Gewicht (kg)", 
+                                        value=float(row['weight']), 
+                                        min_value=0.0,
+                                        step=0.5,
+                                        key=f"weight_{row['id']}",
+                                        disabled=completed
+                                    )
+                                
+                                with col3:
+                                    # Bearbeitbare Wiederholungen
+                                    try:
+                                        reps_value = int(row['reps'])
+                                    except:
+                                        reps_value = 10
+                                    
+                                    new_reps = st.number_input(
+                                        "Wiederholungen", 
+                                        value=reps_value,
+                                        min_value=1,
+                                        step=1,
+                                        key=f"reps_{row['id']}",
+                                        disabled=completed
+                                    )
+                                
+                                with col4:
+                                    # RIR (Reps in Reserve)
+                                    try:
+                                        rir_value = int(row['rirDone']) if row['rirDone'] else 0
+                                    except:
+                                        rir_value = 0
+                                    
+                                    rir_done = st.number_input(
+                                        "RIR", 
+                                        value=rir_value,
+                                        min_value=0,
+                                        max_value=10,
+                                        step=1,
+                                        key=f"rir_{row['id']}",
+                                        help="Reps in Reserve - Wie viele Wiederholungen hättest du noch schaffen können?",
+                                        disabled=completed
+                                    )
+                                
+                                with col5:
+                                    if not completed:
+                                        # Speichern und als erledigt markieren
+                                        if st.button("✅ Speichern & Erledigt", key=f"save_{row['id']}"):
+                                            update = {
+                                                "weight": new_weight,
+                                                "reps": str(new_reps),
+                                                "rirDone": rir_done,
+                                                "completed": True
+                                            }
+                                            # Nur time hinzufügen wenn die Spalte existiert
+                                            if 'time' in df.columns:
+                                                update["time"] = datetime.datetime.now().strftime("%H:%M:%S")
+                                            
+                                            success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
+                                            if success:
+                                                st.success("Gespeichert!")
+                                                st.rerun()
+                                            else:
+                                                st.error("Fehler beim Speichern")
+                                    else:
+                                        # Option zum Zurücksetzen
+                                        if st.button("↩️ Zurücksetzen", key=f"reset_{row['id']}"):
+                                            update = {"completed": False}
+                                            success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
+                                            if success:
+                                                st.rerun()
+                                
+                                st.markdown("</div>", unsafe_allow_html=True)
+                        
+                        # Optionale Nachricht an den Coach für die gesamte Übung
+                        with st.expander("💬 Nachricht an Coach", expanded=False):
+                            message = st.text_area(
+                                "Feedback zur Übung",
+                                key=f"msg_{exercise_name}_{workout_name}",
+                                placeholder="z.B. Gewicht war zu leicht, Technik-Fragen, etc."
                             )
-                            
-                            col1, col2, col3, col4, col5 = st.columns([1, 2, 2, 2, 2])
-                            
-                            with col1:
-                                st.markdown(f"**Satz {row['set']}**")
-                            
-                            with col2:
-                                # Bearbeitbares Gewicht
-                                new_weight = st.number_input(
-                                    "Gewicht (kg)", 
-                                    value=float(row['weight']), 
-                                    min_value=0.0,
-                                    step=0.5,
-                                    key=f"weight_{row['id']}",
-                                    disabled=completed
-                                )
-                            
-                            with col3:
-                                # Bearbeitbare Wiederholungen - mit besserer Fehlerbehandlung
-                                try:
-                                    reps_value = int(row['reps'])
-                                except:
-                                    reps_value = 10  # Standardwert falls Konvertierung fehlschlägt
-                                
-                                new_reps = st.number_input(
-                                    "Wiederholungen", 
-                                    value=reps_value,
-                                    min_value=1,
-                                    step=1,
-                                    key=f"reps_{row['id']}",
-                                    disabled=completed
-                                )
-                            
-                            with col4:
-                                # RIR (Reps in Reserve)
-                                try:
-                                    rir_value = int(row['rirDone']) if row['rirDone'] else 0
-                                except:
-                                    rir_value = 0
-                                
-                                rir_done = st.number_input(
-                                    "RIR", 
-                                    value=rir_value,
-                                    min_value=0,
-                                    max_value=10,
-                                    step=1,
-                                    key=f"rir_{row['id']}",
-                                    help="Reps in Reserve - Wie viele Wiederholungen hättest du noch schaffen können?",
-                                    disabled=completed
-                                )
-                            
-                            with col5:
-                                if not completed:
-                                    # Speichern und als erledigt markieren
-                                    if st.button("✅ Speichern & Erledigt", key=f"save_{row['id']}"):
-                                        update = {
-                                            "weight": new_weight,
-                                            "reps": str(new_reps),  # Als String speichern
-                                            "rirDone": rir_done,
-                                            "completed": True,
-                                            "time": datetime.datetime.now().strftime("%H:%M:%S")
-                                        }
-                                        success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
-                                        if success:
-                                            st.success("Gespeichert!")
-                                            st.rerun()
-                                        else:
-                                            st.error("Fehler beim Speichern")
-                                else:
-                                    # Option zum Zurücksetzen
-                                    if st.button("↩️ Zurücksetzen", key=f"reset_{row['id']}"):
-                                        update = {"completed": False}
-                                        success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
-                                        if success:
-                                            st.rerun()
-                            
-                            st.markdown("</div>", unsafe_allow_html=True)
-                    
-                    # Optionale Nachricht an den Coach für die gesamte Übung
-                    with st.expander("💬 Nachricht an Coach", expanded=False):
-                        message = st.text_area(
-                            "Feedback zur Übung",
-                            key=f"msg_{exercise_name}_{workout_name}",
-                            placeholder="z.B. Gewicht war zu leicht, Technik-Fragen, etc."
-                        )
-                        if st.button("Nachricht senden", key=f"send_msg_{exercise_name}_{workout_name}"):
-                            # Hier könntest du die Nachricht für alle Sätze dieser Übung speichern
-                            st.info("Nachricht-Funktion wird noch implementiert")
+                            if st.button("Nachricht senden", key=f"send_msg_{exercise_name}_{workout_name}"):
+                                # Hier könntest du die Nachricht für alle Sätze dieser Übung speichern
+                                st.info("Nachricht-Funktion wird noch implementiert")
 
 with tab2:
     st.subheader("Deine Analyse")

@@ -54,8 +54,6 @@ def load_user_workouts(user_uuid):
         df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0)
     if "reps" in df.columns:
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
-    if "completed" in df.columns:
-        df["completed"] = df["completed"].fillna(False)
     return df
 
 def analyze_workout_history(user_uuid):
@@ -144,7 +142,7 @@ with tab1:
                 for exercise_name, exercise_group in workout_group.groupby("exercise"):
                     with st.expander(exercise_name):
                         for idx, row in exercise_group.iterrows():
-                            completed = bool(row['completed']) if pd.notna(row['completed']) else False
+                            completed = row['completed'] is True
                             bg_color = "#d4edda" if completed else "#ffffff"
                             with st.container():
                                 st.markdown(f"<div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)

@@ -37,7 +37,6 @@ def insert_supabase_data(table, data):
 
 def update_supabase_data(table, updates, row_id):
     response = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{row_id}", headers=HEADERS, json=updates)
-    st.write(f"🔧 Supabase Response: {response.status_code} - {response.text}")
     return response.status_code == 204
 
 def delete_supabase_data(table, row_id):
@@ -133,19 +132,20 @@ with tab1:
     if df.empty:
         st.info("Keine Workouts gefunden.")
     else:
-        for idx, row in df.iterrows():
-            with st.expander(f"{row['workout']} - {row['exercise']} - Satz {row['set']}"):
-                new_weight = st.number_input("Gewicht (kg)", value=row['weight'] if row['weight'] else 0.0, key=f"weight_{row['id']}")
-                new_reps = st.number_input("Wiederholungen", value=int(row['reps']) if row['reps'] else 0, step=1, key=f"reps_{row['id']}")
-                new_completed = st.checkbox("Erledigt", value=row['completed'], key=f"completed_{row['id']}")
-                st.write(f"🔎 Debug: ID = {row['id']}")
-                if st.button("💾 Speichern", key=f"save_{row['id']}"):
-                    update = {"weight": new_weight, "reps": new_reps, "completed": new_completed}
-                    success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
-                    if success:
-                        st.success("Änderungen gespeichert")
-                    else:
-                        st.error("Fehler beim Speichern")
+        grouped = df.groupby(["workout", "exercise"])
+        for (workout_name, exercise_name), group in grouped:
+            with st.expander(f"{workout_name} - {exercise_name}"):
+                for idx, row in group.iterrows():
+                    bg_color = "#d4edda" if row['completed'] else "#ffffff"
+                    with st.container():
+                        st.markdown(f"<div style='background-color: {bg_color}; padding: 10px; border-radius: 5px;'>", unsafe_allow_html=True)
+                        st.write(f"**Satz {row['set']}** — Gewicht: {row['weight']} kg — Wdh: {row['reps']}")
+                        if st.button("✅ Erledigt", key=f"done_{row['id']}", help="Satz als erledigt markieren"):
+                            update = {"completed": True}
+                            success = update_supabase_data(TABLE_WORKOUT, update, row['id'])
+                            if success:
+                                st.experimental_rerun()
+                        st.markdown("</div>", unsafe_allow_html=True)
 
 with tab2:
     st.subheader("Deine Analyse")

@@ -29,7 +29,7 @@ def send_to_make_webhook(payload):
     except Exception as e:
         return e
 
-st.title("Fitness- und Gesundheitsfragebogen (Supabase + Make)")
+st.title("Fitness- und Gesundheitsfragebogen (Supabase + Make v2)")
 
 with st.form("fitness_fragebogen"):
     st.header("Persönliche Daten")

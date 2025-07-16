@@ -37,6 +37,7 @@ def insert_supabase_data(table, data):
 
 def update_supabase_data(table, updates, row_id):
     response = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?id=eq.{row_id}", headers=HEADERS, json=updates)
+    st.write(f"🔧 Supabase Response: {response.status_code} - {response.text}")
     return response.status_code == 204
 
 def delete_supabase_data(table, row_id):

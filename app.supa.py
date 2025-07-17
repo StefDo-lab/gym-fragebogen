@@ -3,6 +3,8 @@ import datetime
 import requests
 import pandas as pd
 import re
+from openai import OpenAI
+import io
 
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
@@ -19,6 +21,14 @@ HEADERS = {
 
 st.set_page_config(page_title="Workout Tracker", layout="wide")
 st.title("Workout Tracker")
+
+# ---- OpenAI Setup ----
+try:
+    openai_key = st.secrets.get("openai_api_key", None)
+    client = OpenAI(api_key=openai_key) if openai_key else None
+except Exception as e:
+    st.error(f"Fehler beim Initialisieren des OpenAI-Clients: {e}")
+    client = None
 
 def get_supabase_data(table, filters=None):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
@@ -74,7 +84,19 @@ def analyze_workout_history(user_uuid):
         df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0)
     if "reps" in df.columns:
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
-    return f"{len(df)} Einträge gefunden.", df
+    
+    # Erstelle Zusammenfassung
+    summary = []
+    if not df.empty:
+        exercises = df['exercise'].unique()
+        for exercise in exercises:
+            ex_data = df[df['exercise'] == exercise]
+            max_weight = ex_data['weight'].max()
+            avg_reps = ex_data['reps'].mean()
+            count = len(ex_data.groupby('date'))
+            summary.append(f"- {exercise}: Max {max_weight:.1f}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
+    
+    return "\n".join(summary) if summary else "Keine Trainingshistorie gefunden.", df
 
 def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
     rows = []
@@ -155,7 +177,6 @@ def add_set_to_exercise(user_uuid, exercise_data, new_set_number):
 
 def add_exercise_to_workout(user_uuid, workout_name, exercise_name, sets=3, weight=0, reps="10"):
     """Fügt eine neue Übung zu einem Workout hinzu"""
-    # Hole die aktuellen Daten für dieses Workout
     df = load_user_workouts(user_uuid)
     workout_data = df[df['workout'] == workout_name].iloc[0] if not df[df['workout'] == workout_name].empty else None
     
@@ -227,6 +248,72 @@ def add_workout(user_uuid, user_name, workout_name, exercise_name, sets=3, weigh
     
     return success
 
+def delete_exercise(user_uuid, workout_name, exercise_name):
+    """Löscht alle Sätze einer Übung"""
+    df = load_user_workouts(user_uuid)
+    exercise_rows = df[(df['workout'] == workout_name) & (df['exercise'] == exercise_name)]
+    
+    success = True
+    for _, row in exercise_rows.iterrows():
+        if not delete_supabase_data(TABLE_WORKOUT, row['id']):
+            success = False
+    
+    return success
+
+def delete_workout(user_uuid, workout_name):
+    """Löscht ein komplettes Workout"""
+    df = load_user_workouts(user_uuid)
+    workout_rows = df[df['workout'] == workout_name]
+    
+    success = True
+    for _, row in workout_rows.iterrows():
+        if not delete_supabase_data(TABLE_WORKOUT, row['id']):
+            success = False
+    
+    return success
+
+def archive_completed_workouts(user_uuid):
+    """Archiviert alle erledigten Workouts"""
+    df = load_user_workouts(user_uuid)
+    completed = df[df['completed'] == True]
+    
+    if completed.empty:
+        return False, "Keine erledigten Workouts zum Archivieren"
+    
+    # Speichere in Archive
+    success = True
+    archived_count = 0
+    
+    for _, row in completed.iterrows():
+        archive_row = {
+            'uuid': row['uuid'],
+            'date': row['date'],
+            'time': row.get('time'),
+            'name': row['name'],
+            'workout': row['workout'],
+            'exercise': row['exercise'],
+            'set': row['set'],
+            'weight': row['weight'],
+            'reps': row['reps'],
+            'rirDone': row.get('rirDone', 0),
+            'messageToCoach': row.get('messageToCoach', '')
+        }
+        
+        if insert_supabase_data(TABLE_ARCHIVE, archive_row):
+            # Lösche aus Workout-Tabelle
+            if delete_supabase_data(TABLE_WORKOUT, row['id']):
+                archived_count += 1
+            else:
+                success = False
+        else:
+            success = False
+    
+    return success, f"{archived_count} Einträge archiviert"
+
+def export_to_csv(df):
+    """Exportiert DataFrame als CSV"""
+    return df.to_csv(index=False).encode('utf-8')
+
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
 if not st.session_state.userid:
@@ -238,7 +325,7 @@ if not st.session_state.userid:
 
 st.sidebar.success(f"Eingeloggt als {st.session_state.userid}")
 
-tab1, tab2 = st.tabs(["💪 Training", "📈 Analyse"])
+tab1, tab2, tab3, tab4 = st.tabs(["💪 Training", "🤖 KI-Trainer", "📈 Analyse", "⚙️ Verwaltung"])
 
 with tab1:
     st.subheader("Deine Workouts")
@@ -251,12 +338,29 @@ with tab1:
     if df.empty:
         st.info("Keine Workouts gefunden. Füge dein erstes Workout hinzu!")
     else:
+        # Export-Button
+        col1, col2 = st.columns([4, 1])
+        with col2:
+            csv = export_to_csv(df)
+            st.download_button(
+                label="📥 Export CSV",
+                data=csv,
+                file_name=f"workout_{datetime.date.today()}.csv",
+                mime="text/csv"
+            )
+        
         # Gruppiere nach Workout, behalte aber die Reihenfolge bei
         workout_order = df.groupby('workout').first().sort_values('id').index
         
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
             with st.expander(f"🏋️ {workout_name}", expanded=True):
+                # Workout löschen Button
+                if st.button(f"🗑️ Workout '{workout_name}' löschen", key=f"del_workout_{workout_name}"):
+                    if delete_workout(st.session_state.userid, workout_name):
+                        st.success(f"Workout '{workout_name}' gelöscht!")
+                        st.rerun()
+                
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -267,6 +371,12 @@ with tab1:
                         coach_msg = exercise_group.iloc[0]['messageFromCoach']
                         if coach_msg and coach_msg.strip():
                             st.info(f"💬 Hinweis vom Coach: {coach_msg}")
+                        
+                        # Übung löschen Button
+                        if st.button(f"🗑️ Übung löschen", key=f"del_ex_{exercise_name}_{workout_name}"):
+                            if delete_exercise(st.session_state.userid, workout_name, exercise_name):
+                                st.success(f"Übung '{exercise_name}' gelöscht!")
+                                st.rerun()
                         
                         # Sortiere Sätze nach Satz-Nummer
                         exercise_group = exercise_group.sort_values('set')
@@ -381,16 +491,25 @@ with tab1:
                                         st.success("Satz gelöscht!")
                                         st.rerun()
                         
-                        # Optionale Nachricht an den Coach für die gesamte Übung
+                        # Nachricht an den Coach
                         with st.expander("💬 Nachricht an Coach", expanded=False):
+                            current_message = exercise_group.iloc[0].get('messageToCoach', '')
                             message = st.text_area(
                                 "Feedback zur Übung",
+                                value=current_message,
                                 key=f"msg_{exercise_name}_{workout_name}",
                                 placeholder="z.B. Gewicht war zu leicht, Technik-Fragen, etc."
                             )
                             if st.button("Nachricht senden", key=f"send_msg_{exercise_name}_{workout_name}"):
-                                # Hier könntest du die Nachricht für alle Sätze dieser Übung speichern
-                                st.info("Nachricht-Funktion wird noch implementiert")
+                                # Update alle Sätze dieser Übung mit der Nachricht
+                                success = True
+                                for _, row in exercise_group.iterrows():
+                                    update = {"messageToCoach": message}
+                                    if not update_supabase_data(TABLE_WORKOUT, update, row['id']):
+                                        success = False
+                                if success:
+                                    st.success("Nachricht gesendet!")
+                                    st.rerun()
                 
                 # Formular zum Hinzufügen einer neuen Übung NACH allen Übungen
                 st.markdown("---")
@@ -458,8 +577,215 @@ with tab1:
                 st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
-    st.subheader("Deine Analyse")
-    summary, hist_df = analyze_workout_history(st.session_state.userid)
-    st.write(summary)
-    if not hist_df.empty:
-        st.dataframe(hist_df)
+    st.subheader("🤖 Neuen Trainingsplan mit KI erstellen")
+    
+    if not client:
+        st.error("OpenAI API Key ist nicht konfiguriert.")
+    else:
+        # Lade Profil und History
+        profile = get_user_profile(st.session_state.userid)
+        history_summary, _ = analyze_workout_history(st.session_state.userid)
+        
+        with st.expander("Deine Daten für die KI", expanded=True):
+            if profile:
+                st.info("Dein Profil wurde gefunden:")
+                relevant_keys = ["name", "gender", "height", "weight", "experience", "goals", "health_issues"]
+                profile_display = {k: v for k, v in profile.items() if k in relevant_keys and v}
+                st.json(profile_display)
+            
+            st.text_area("Trainingshistorie:", value=history_summary, height=150, disabled=True)
+        
+        additional_info = st.text_area(
+            "Zusätzliche Wünsche für den Plan:",
+            placeholder="z.B. 3er Split, Fokus auf Oberkörper, keine Kniebeugen wegen Knieproblemen..."
+        )
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            training_days = st.selectbox("Trainingstage pro Woche", [2, 3, 4, 5, 6], index=1)
+        with col2:
+            split_type = st.selectbox("Split-Typ", ["Ganzkörper", "2er Split", "3er Split", "Push/Pull/Legs", "Individuell"])
+        with col3:
+            focus = st.selectbox("Fokus", ["Ausgewogen", "Kraft", "Hypertrophie", "Kraftausdauer"])
+        
+        if st.button("🤖 Plan generieren", type="primary"):
+            with st.spinner("KI erstellt deinen personalisierten Plan..."):
+                # Erstelle Prompt
+                if "Keine" in history_summary:
+                    weight_instruction = "Setze alle Gewichte auf 0 kg, da keine Trainingshistorie vorhanden ist."
+                else:
+                    weight_instruction = "Basiere die Gewichte auf der Trainingshistorie."
+                
+                prompt = f"""
+                Erstelle einen Trainingsplan für folgende Person:
+                
+                Profil: {profile}
+                Trainingshistorie: {history_summary}
+                Zusätzliche Wünsche: {additional_info}
+                
+                Erstelle GENAU {training_days} Trainingstage pro Woche.
+                Split-Typ: {split_type}
+                Fokus: {focus}
+                
+                WICHTIG:
+                1. Jeder Trainingstag MUSS mit **Workout-Name:** beginnen
+                2. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
+                3. {weight_instruction}
+                4. Keine zusätzlichen Erklärungen oder Texte am Ende
+                
+                Erstelle nur die Workouts mit den Übungen, sonst nichts.
+                """
+                
+                try:
+                    response = client.chat.completions.create(
+                        model='gpt-4o-mini',
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.7,
+                        max_tokens=2000
+                    )
+                    
+                    plan_text = response.choices[0].message.content
+                    st.session_state['ai_plan'] = plan_text
+                    st.session_state['ai_plan_rows'] = parse_ai_plan_to_rows(
+                        plan_text,
+                        st.session_state.userid,
+                        profile.get('name', 'Unbekannt')
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Fehler bei der KI-Generierung: {e}")
+        
+        # Zeige generierten Plan
+        if 'ai_plan' in st.session_state and st.session_state['ai_plan']:
+            st.markdown("### Generierter Plan")
+            st.text_area("KI-Plan:", value=st.session_state['ai_plan'], height=400, disabled=True)
+            
+            if st.session_state.get('ai_plan_rows'):
+                st.info(f"Der Plan enthält {len(st.session_state['ai_plan_rows'])} Sätze")
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Plan aktivieren", type="primary"):
+                        # Lösche aktuelle Workouts
+                        df = load_user_workouts(st.session_state.userid)
+                        if not df.empty:
+                            for _, row in df.iterrows():
+                                delete_supabase_data(TABLE_WORKOUT, row['id'])
+                        
+                        # Füge neue Workouts hinzu
+                        success = True
+                        for row_data in st.session_state['ai_plan_rows']:
+                            if not insert_supabase_data(TABLE_WORKOUT, row_data):
+                                success = False
+                                break
+                        
+                        if success:
+                            st.success("Neuer Plan wurde aktiviert!")
+                            st.balloons()
+                            del st.session_state['ai_plan']
+                            del st.session_state['ai_plan_rows']
+                            st.rerun()
+                        else:
+                            st.error("Fehler beim Aktivieren des Plans")
+                
+                with col2:
+                    if st.button("❌ Plan verwerfen"):
+                        del st.session_state['ai_plan']
+                        del st.session_state['ai_plan_rows']
+                        st.rerun()
+
+with tab3:
+    st.subheader("📈 Deine Trainingsanalyse")
+    
+    _, archive_df = analyze_workout_history(st.session_state.userid)
+    
+    if archive_df.empty:
+        st.info("Noch keine archivierten Daten vorhanden. Trainiere und archiviere zuerst einige Workouts.")
+    else:
+        # Berechne Volumen
+        archive_df['volume'] = archive_df['weight'] * archive_df['reps']
+        
+        # Übungsauswahl
+        exercises = sorted(archive_df['exercise'].unique())
+        selected_exercise = st.selectbox("Wähle eine Übung für die Analyse:", exercises)
+        
+        if selected_exercise:
+            exercise_df = archive_df[archive_df['exercise'] == selected_exercise]
+            
+            # Konvertiere date zu datetime
+            exercise_df['date'] = pd.to_datetime(exercise_df['date'])
+            
+            # Gruppiere nach Datum
+            daily_stats = exercise_df.groupby('date').agg({
+                'weight': 'max',
+                'reps': 'mean',
+                'volume': 'sum'
+            }).reset_index()
+            
+            # Visualisierungen
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### Gewichtsentwicklung")
+                st.line_chart(daily_stats.set_index('date')['weight'])
+            
+            with col2:
+                st.markdown("#### Volumen pro Training")
+                st.bar_chart(daily_stats.set_index('date')['volume'])
+            
+            # Statistiken
+            st.markdown("#### Statistiken")
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Max Gewicht", f"{exercise_df['weight'].max():.1f} kg")
+            with col2:
+                st.metric("Ø Wiederholungen", f"{exercise_df['reps'].mean():.1f}")
+            with col3:
+                st.metric("Trainings", len(daily_stats))
+            with col4:
+                if len(daily_stats) > 1:
+                    weight_change = daily_stats.iloc[-1]['weight'] - daily_stats.iloc[0]['weight']
+                    st.metric("Fortschritt", f"{weight_change:+.1f} kg")
+
+with tab4:
+    st.subheader("⚙️ Verwaltung")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### Archivierung")
+        st.info("Erledigte Workouts werden normalerweise automatisch um 23:59 Uhr archiviert.")
+        
+        if st.button("📦 Manuell archivieren", type="primary"):
+            success, message = archive_completed_workouts(st.session_state.userid)
+            if success:
+                st.success(message)
+                st.rerun()
+            else:
+                st.warning(message)
+    
+    with col2:
+        st.markdown("### Daten-Export")
+        
+        # Export aktuelle Workouts
+        df = load_user_workouts(st.session_state.userid)
+        if not df.empty:
+            csv = export_to_csv(df)
+            st.download_button(
+                label="📥 Aktuelle Workouts exportieren",
+                data=csv,
+                file_name=f"workouts_{datetime.date.today()}.csv",
+                mime="text/csv"
+            )
+        
+        # Export Archiv
+        _, archive_df = analyze_workout_history(st.session_state.userid)
+        if not archive_df.empty:
+            csv_archive = export_to_csv(archive_df)
+            st.download_button(
+                label="📥 Trainingshistorie exportieren",
+                data=csv_archive,
+                file_name=f"training_history_{datetime.date.today()}.csv",
+                mime="text/csv"
+            )

@@ -155,18 +155,6 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
-# ---- App Header mit mobilem Look ----
-def show_mobile_header():
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        if st.button("☰", key="menu"):
-            st.session_state.show_sidebar = not st.session_state.get('show_sidebar', False)
-    with col2:
-        st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout</h1>", unsafe_allow_html=True)
-    with col3:
-        if st.button("👤", key="profile"):
-            st.session_state.show_profile = not st.session_state.get('show_profile', False)
-
 # ---- Installation Prompt ----
 def show_install_prompt():
     if 'install_prompted' not in st.session_state:
@@ -563,8 +551,8 @@ if not st.session_state.userid:
                 st.rerun()
     st.stop()
 
-# Mobile Header
-show_mobile_header()
+# Einfacher Titel ohne Header-Buttons
+st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout Tracker</h1>", unsafe_allow_html=True)
 
 # Sidebar Info
 st.sidebar.success(f"Eingeloggt als {st.session_state.userid}")
@@ -601,12 +589,6 @@ with tab1:
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
             with st.expander(f"🏋️ {workout_name}", expanded=True):
-                # Workout löschen Button
-                if st.button(f"🗑️ Workout '{workout_name}' löschen", key=f"del_workout_{workout_name}"):
-                    if delete_workout(st.session_state.userid, workout_name):
-                        st.success(f"Workout '{workout_name}' gelöscht!")
-                        st.rerun()
-                
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -617,12 +599,6 @@ with tab1:
                         coach_msg = exercise_group.iloc[0]['messageFromCoach']
                         if coach_msg and coach_msg.strip():
                             st.info(f"💬 Hinweis vom Coach: {coach_msg}")
-                        
-                        # Übung löschen Button
-                        if st.button(f"🗑️ Übung löschen", key=f"del_ex_{exercise_name}_{workout_name}"):
-                            if delete_exercise(st.session_state.userid, workout_name, exercise_name):
-                                st.success(f"Übung '{exercise_name}' gelöscht!")
-                                st.rerun()
                         
                         # Sortiere Sätze nach Satz-Nummer
                         exercise_group = exercise_group.sort_values('set')
@@ -756,71 +732,87 @@ with tab1:
                                 if success:
                                     st.success("Nachricht gesendet!")
                                     st.rerun()
+                        
+                        # Übung löschen Button am Ende
+                        st.markdown("---")
+                        col1, col2, col3 = st.columns([3, 1, 1])
+                        with col3:
+                            if st.button("🗑️ Übung löschen", key=f"del_ex_{exercise_name}_{workout_name}"):
+                                if delete_exercise(st.session_state.userid, workout_name, exercise_name):
+                                    st.success(f"Übung '{exercise_name}' gelöscht!")
+                                    st.rerun()
                 
-                # Formular zum Hinzufügen einer neuen Übung NACH allen Übungen
+                # Formular zum Hinzufügen einer neuen Übung in Expander
+                with st.expander("➕ Neue Übung hinzufügen", expanded=False):
+                    with st.form(key=f"add_exercise_form_{workout_name}"):
+                        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                        with col1:
+                            new_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bizeps Curls")
+                        with col2:
+                            new_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
+                        with col3:
+                            new_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
+                        with col4:
+                            new_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
+                        
+                        if st.form_submit_button("➕ Übung hinzufügen"):
+                            if new_exercise_name:
+                                if add_exercise_to_workout(
+                                    st.session_state.userid, 
+                                    workout_name, 
+                                    new_exercise_name, 
+                                    new_exercise_sets, 
+                                    new_exercise_weight, 
+                                    str(new_exercise_reps)
+                                ):
+                                    st.success(f"Übung '{new_exercise_name}' hinzugefügt!")
+                                    st.rerun()
+                            else:
+                                st.error("Bitte gib einen Übungsnamen ein")
+                
+                # Workout löschen Button am Ende
                 st.markdown("---")
-                with st.form(key=f"add_exercise_form_{workout_name}"):
-                    st.markdown("**Neue Übung hinzufügen:**")
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                    with col1:
-                        new_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bizeps Curls")
-                    with col2:
-                        new_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
-                    with col3:
-                        new_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
-                    with col4:
-                        new_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
-                    
-                    if st.form_submit_button("➕ Übung hinzufügen"):
-                        if new_exercise_name:
-                            if add_exercise_to_workout(
-                                st.session_state.userid, 
-                                workout_name, 
-                                new_exercise_name, 
-                                new_exercise_sets, 
-                                new_exercise_weight, 
-                                str(new_exercise_reps)
-                            ):
-                                st.success(f"Übung '{new_exercise_name}' hinzugefügt!")
-                                st.rerun()
-                        else:
-                            st.error("Bitte gib einen Übungsnamen ein")
+                col1, col2, col3 = st.columns([3, 1, 1])
+                with col3:
+                    if st.button(f"🗑️ Workout löschen", key=f"del_workout_{workout_name}"):
+                        if delete_workout(st.session_state.userid, workout_name):
+                            st.success(f"Workout '{workout_name}' gelöscht!")
+                            st.rerun()
     
-    # Formular für neues Workout GANZ UNTEN
-    st.markdown("---")
-    st.markdown("### Neues Workout erstellen")
-    with st.form(key="add_workout_form"):
-        col1, col2 = st.columns([2, 3])
-        with col1:
-            new_workout_name = st.text_input("Workout Name", placeholder="z.B. Oberkörper Tag")
-        with col2:
-            st.markdown("**Erste Übung:**")
-        
-        col3, col4, col5, col6 = st.columns([3, 1, 1, 1])
-        with col3:
-            first_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
-        with col4:
-            first_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
-        with col5:
-            first_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
-        with col6:
-            first_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
-        
-        if st.form_submit_button("🆕 Workout erstellen"):
-            if new_workout_name and first_exercise_name:
-                if add_workout(
-                    st.session_state.userid,
-                    user_name,
-                    new_workout_name,
-                    first_exercise_name,
-                    first_exercise_sets,
-                    first_exercise_weight,
-                    str(first_exercise_reps)
-                ):
-                    st.success(f"Workout '{new_workout_name}' erstellt!")
-                    st.rerun()
-            else:
-                st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
+    # Formular für neues Workout in Expander
+    with st.expander("🆕 Neues Workout erstellen", expanded=False):
+        with st.form(key="add_workout_form"):
+            col1, col2 = st.columns([2, 3])
+            with col1:
+                new_workout_name = st.text_input("Workout Name", placeholder="z.B. Oberkörper Tag")
+            with col2:
+                st.markdown("**Erste Übung:**")
+            
+            col3, col4, col5, col6 = st.columns([3, 1, 1, 1])
+            with col3:
+                first_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
+            with col4:
+                first_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
+            with col5:
+                first_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
+            with col6:
+                first_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
+            
+            if st.form_submit_button("🆕 Workout erstellen"):
+                if new_workout_name and first_exercise_name:
+                    if add_workout(
+                        st.session_state.userid,
+                        user_name,
+                        new_workout_name,
+                        first_exercise_name,
+                        first_exercise_sets,
+                        first_exercise_weight,
+                        str(first_exercise_reps)
+                    ):
+                        st.success(f"Workout '{new_workout_name}' erstellt!")
+                        st.rerun()
+                else:
+                    st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
     st.subheader("🤖 Neuen Trainingsplan mit KI erstellen")

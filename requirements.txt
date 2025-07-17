@@ -1,4 +1,5 @@
 streamlit
+supabase
 gspread
 requests
 oauth2client

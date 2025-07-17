@@ -1,9 +1,9 @@
 import streamlit as st
 from supabase import create_client, Client
 
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_KEY = "your-public-anon-key"
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+url = st.secrets["supabase_url"]
+key = st.secrets["supabase_key"]
+supabase: Client = create_client(url, key)
 
 if "user" not in st.session_state:
     st.session_state.user = None

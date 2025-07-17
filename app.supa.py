@@ -193,6 +193,40 @@ def add_exercise_to_workout(user_uuid, workout_name, exercise_name, sets=3, weig
     
     return success
 
+def add_workout(user_uuid, user_name, workout_name, exercise_name, sets=3, weight=0, reps="10"):
+    """Fügt ein neues Workout mit einer ersten Übung hinzu"""
+    current_date = datetime.date.today().isoformat()
+    
+    success = True
+    for set_num in range(1, sets + 1):
+        new_row = {
+            'uuid': user_uuid,
+            'date': current_date,
+            'name': user_name,
+            'workout': workout_name,
+            'exercise': exercise_name,
+            'set': set_num,
+            'weight': weight,
+            'reps': str(reps),
+            'unit': 'kg',
+            'type': '',
+            'completed': False,
+            'messageToCoach': '',
+            'messageFromCoach': '',
+            'rirSuggested': 0,
+            'rirDone': 0,
+            'time': None,
+            'generalStatementFrom': '',
+            'generalStatementTo': '',
+            'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
+            'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
+        }
+        if not insert_supabase_data(TABLE_WORKOUT, new_row):
+            success = False
+            break
+    
+    return success
+
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
 if not st.session_state.userid:
@@ -209,8 +243,13 @@ tab1, tab2 = st.tabs(["💪 Training", "📈 Analyse"])
 with tab1:
     st.subheader("Deine Workouts")
     df = load_user_workouts(st.session_state.userid)
+    
+    # Hole Benutzername für neue Workouts
+    profile = get_user_profile(st.session_state.userid)
+    user_name = profile.get('name', 'Unbekannt')
+    
     if df.empty:
-        st.info("Keine Workouts gefunden.")
+        st.info("Keine Workouts gefunden. Füge dein erstes Workout hinzu!")
     else:
         # Gruppiere nach Workout, behalte aber die Reihenfolge bei
         workout_order = df.groupby('workout').first().sort_values('id').index
@@ -218,33 +257,6 @@ with tab1:
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
             with st.expander(f"🏋️ {workout_name}", expanded=True):
-                # Button zum Hinzufügen einer neuen Übung
-                with st.form(key=f"add_exercise_form_{workout_name}"):
-                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
-                    with col1:
-                        new_exercise_name = st.text_input("Neue Übung", placeholder="z.B. Bizeps Curls")
-                    with col2:
-                        new_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
-                    with col3:
-                        new_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
-                    with col4:
-                        new_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
-                    
-                    if st.form_submit_button("➕ Übung hinzufügen"):
-                        if new_exercise_name:
-                            if add_exercise_to_workout(
-                                st.session_state.userid, 
-                                workout_name, 
-                                new_exercise_name, 
-                                new_exercise_sets, 
-                                new_exercise_weight, 
-                                str(new_exercise_reps)
-                            ):
-                                st.success(f"Übung '{new_exercise_name}' hinzugefügt!")
-                                st.rerun()
-                        else:
-                            st.error("Bitte gib einen Übungsnamen ein")
-                
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -255,24 +267,6 @@ with tab1:
                         coach_msg = exercise_group.iloc[0]['messageFromCoach']
                         if coach_msg and coach_msg.strip():
                             st.info(f"💬 Hinweis vom Coach: {coach_msg}")
-                        
-                        # Buttons für Satzverwaltung
-                        col_add, col_del, col_space = st.columns([1, 1, 3])
-                        with col_add:
-                            if st.button("➕ Satz hinzufügen", key=f"add_set_{exercise_name}_{workout_name}"):
-                                last_set = exercise_group.iloc[-1]
-                                new_set_number = exercise_group['set'].max() + 1
-                                if add_set_to_exercise(st.session_state.userid, last_set.to_dict(), new_set_number):
-                                    st.success("Satz hinzugefügt!")
-                                    st.rerun()
-                        
-                        with col_del:
-                            if len(exercise_group) > 1:
-                                if st.button("➖ Letzten Satz löschen", key=f"del_set_{exercise_name}_{workout_name}"):
-                                    last_set_id = exercise_group.iloc[-1]['id']
-                                    if delete_supabase_data(TABLE_WORKOUT, last_set_id):
-                                        st.success("Satz gelöscht!")
-                                        st.rerun()
                         
                         # Sortiere Sätze nach Satz-Nummer
                         exercise_group = exercise_group.sort_values('set')
@@ -369,6 +363,24 @@ with tab1:
                                 
                                 st.markdown("</div>", unsafe_allow_html=True)
                         
+                        # Buttons für Satzverwaltung NACH allen Sätzen
+                        col_add, col_del, col_space = st.columns([1, 1, 3])
+                        with col_add:
+                            if st.button("➕ Satz hinzufügen", key=f"add_set_{exercise_name}_{workout_name}"):
+                                last_set = exercise_group.iloc[-1]
+                                new_set_number = exercise_group['set'].max() + 1
+                                if add_set_to_exercise(st.session_state.userid, last_set.to_dict(), new_set_number):
+                                    st.success("Satz hinzugefügt!")
+                                    st.rerun()
+                        
+                        with col_del:
+                            if len(exercise_group) > 1:
+                                if st.button("➖ Letzten Satz löschen", key=f"del_set_{exercise_name}_{workout_name}"):
+                                    last_set_id = exercise_group.iloc[-1]['id']
+                                    if delete_supabase_data(TABLE_WORKOUT, last_set_id):
+                                        st.success("Satz gelöscht!")
+                                        st.rerun()
+                        
                         # Optionale Nachricht an den Coach für die gesamte Übung
                         with st.expander("💬 Nachricht an Coach", expanded=False):
                             message = st.text_area(
@@ -379,6 +391,71 @@ with tab1:
                             if st.button("Nachricht senden", key=f"send_msg_{exercise_name}_{workout_name}"):
                                 # Hier könntest du die Nachricht für alle Sätze dieser Übung speichern
                                 st.info("Nachricht-Funktion wird noch implementiert")
+                
+                # Formular zum Hinzufügen einer neuen Übung NACH allen Übungen
+                st.markdown("---")
+                with st.form(key=f"add_exercise_form_{workout_name}"):
+                    st.markdown("**Neue Übung hinzufügen:**")
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    with col1:
+                        new_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bizeps Curls")
+                    with col2:
+                        new_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
+                    with col3:
+                        new_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
+                    with col4:
+                        new_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
+                    
+                    if st.form_submit_button("➕ Übung hinzufügen"):
+                        if new_exercise_name:
+                            if add_exercise_to_workout(
+                                st.session_state.userid, 
+                                workout_name, 
+                                new_exercise_name, 
+                                new_exercise_sets, 
+                                new_exercise_weight, 
+                                str(new_exercise_reps)
+                            ):
+                                st.success(f"Übung '{new_exercise_name}' hinzugefügt!")
+                                st.rerun()
+                        else:
+                            st.error("Bitte gib einen Übungsnamen ein")
+    
+    # Formular für neues Workout GANZ UNTEN
+    st.markdown("---")
+    st.markdown("### Neues Workout erstellen")
+    with st.form(key="add_workout_form"):
+        col1, col2 = st.columns([2, 3])
+        with col1:
+            new_workout_name = st.text_input("Workout Name", placeholder="z.B. Oberkörper Tag")
+        with col2:
+            st.markdown("**Erste Übung:**")
+        
+        col3, col4, col5, col6 = st.columns([3, 1, 1, 1])
+        with col3:
+            first_exercise_name = st.text_input("Übungsname", placeholder="z.B. Bankdrücken")
+        with col4:
+            first_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
+        with col5:
+            first_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
+        with col6:
+            first_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
+        
+        if st.form_submit_button("🆕 Workout erstellen"):
+            if new_workout_name and first_exercise_name:
+                if add_workout(
+                    st.session_state.userid,
+                    user_name,
+                    new_workout_name,
+                    first_exercise_name,
+                    first_exercise_sets,
+                    first_exercise_weight,
+                    str(first_exercise_reps)
+                ):
+                    st.success(f"Workout '{new_workout_name}' erstellt!")
+                    st.rerun()
+            else:
+                st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
     st.subheader("Deine Analyse")

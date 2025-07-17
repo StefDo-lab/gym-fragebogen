@@ -174,7 +174,7 @@ def fragebogen():
             st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
         else:
             data_payload = {
-                "user_id": st.session_state.user.id,
+                "uuid": st.session_state.user.id,
                 "uuid": str(uuid.uuid4()),
                 "forename": forename,
                 "surename": surename,

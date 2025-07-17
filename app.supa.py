@@ -6,6 +6,7 @@ import re
 from openai import OpenAI
 import io
 import json
+from supabase import create_client, Client
 
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
@@ -19,6 +20,9 @@ HEADERS = {
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type": "application/json"
 }
+
+# Supabase Client für Auth
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 st.set_page_config(
     page_title="Workout Tracker",
@@ -528,34 +532,86 @@ def export_to_csv(df):
     """Exportiert DataFrame als CSV"""
     return df.to_csv(index=False).encode('utf-8')
 
+# ---- Login/Auth Section ----
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
+    st.session_state['user_email'] = None
 
 if not st.session_state.userid:
     # Zeige Install-Prompt beim ersten Besuch
     show_install_prompt()
     
-    st.markdown("<h2 style='text-align: center;'>Willkommen zurück! 👋</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
     
-    # Zentrierter Login
+    # Nur Login, keine Registrierung (da diese im Fragebogen erfolgt)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        uid = st.text_input("UserID", type="password", placeholder="Deine UserID eingeben")
+        st.info("📝 Bitte melde dich mit deinem Account an. Falls du noch keinen Account hast, registriere dich bitte zuerst beim Fragebogen.")
         
-        if st.button("Login", type="primary", use_container_width=True):
-            if uid:
-                st.session_state.userid = uid.strip()
-                # Haptic Feedback
-                st.markdown("<script>triggerHaptic();</script>", unsafe_allow_html=True)
-                st.success("Eingeloggt!")
-                st.rerun()
+        with st.form("login_form"):
+            email = st.text_input("Email", placeholder="deine@email.de")
+            password = st.text_input("Passwort", type="password", placeholder="••••••••")
+            
+            if st.form_submit_button("Anmelden", type="primary", use_container_width=True):
+                if email and password:
+                    try:
+                        # Supabase Auth Login
+                        response = supabase.auth.sign_in_with_password({
+                            "email": email,
+                            "password": password
+                        })
+                        
+                        if response.user:
+                            st.session_state.userid = response.user.id
+                            st.session_state.user_email = email
+                            st.success("Erfolgreich angemeldet!")
+                            st.rerun()
+                        else:
+                            st.error("Anmeldung fehlgeschlagen")
+                            
+                    except Exception as e:
+                        if "Invalid login credentials" in str(e):
+                            st.error("Ungültige Email oder Passwort")
+                        else:
+                            st.error(f"Fehler: {str(e)}")
+                else:
+                    st.warning("Bitte Email und Passwort eingeben")
+        
+        # Links zu Fragebogen und Passwort-Reset
+        col_left, col_right = st.columns(2)
+        with col_left:
+            st.markdown(
+                "<p style='text-align: center;'>"
+                "<a href='/fragebogen' target='_blank'>→ Zur Registrierung</a>"
+                "</p>", 
+                unsafe_allow_html=True
+            )
+        with col_right:
+            st.markdown(
+                "<p style='text-align: center;'>"
+                "<a href='#' onclick='alert(\"Bitte kontaktiere den Support für einen Passwort-Reset.\")'>Passwort vergessen?</a>"
+                "</p>", 
+                unsafe_allow_html=True
+            )
+    
     st.stop()
 
+# ---- Nach erfolgreichem Login ----
 # Einfacher Titel ohne Header-Buttons
 st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout Tracker</h1>", unsafe_allow_html=True)
 
-# Sidebar Info
-st.sidebar.success(f"Eingeloggt als {st.session_state.userid}")
+# Sidebar Info mit Email
+st.sidebar.success(f"Eingeloggt als {st.session_state.get('user_email', st.session_state.userid)}")
+
+# Logout-Button in der Sidebar
+if st.sidebar.button("🚪 Abmelden"):
+    try:
+        supabase.auth.sign_out()
+    except:
+        pass
+    st.session_state.userid = None
+    st.session_state.user_email = None
+    st.rerun()
 
 # Mobile-optimierte Tabs
 tab_names = ["🏋️ Training", "🤖 KI-Plan", "📊 Stats", "⚙️ Mehr"]

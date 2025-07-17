@@ -34,11 +34,11 @@ def send_to_make_webhook(payload):
     except Exception as e:
         return e
 
-# ---- Session State ----
 if "user" not in st.session_state:
     st.session_state.user = None
+if "mode" not in st.session_state:
+    st.session_state.mode = "login"
 
-# ---- Auth Check ----
 def login():
     st.subheader("Login")
     email = st.text_input("E-Mail", key="login_email")
@@ -55,16 +55,45 @@ def login():
         except Exception as e:
             st.error(f"Login fehlgeschlagen: {e}")
 
+def register():
+    st.subheader("Registrieren")
+    email = st.text_input("E-Mail", key="reg_email")
+    password = st.text_input("Passwort", type="password", key="reg_pw")
+    if st.button("Jetzt registrieren", key="reg_button"):
+        try:
+            res = supabase.auth.sign_up({
+                "email": email,
+                "password": password
+            })
+            if res.user:
+                st.success("Registrierung erfolgreich! Bitte E-Mail bestätigen und anschließend einloggen.")
+                st.session_state.mode = "login"
+        except Exception as e:
+            st.error(f"Registrierung fehlgeschlagen: {e}")
+
 def logout():
     st.session_state.user = None
     st.success("Du wurdest ausgeloggt.")
 
-st.title("Fitness- und Gesundheitsfragebogen (mit Login)")
+def auth_flow():
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Zum Login", key="switch_login"):
+            st.session_state.mode = "login"
+    with col2:
+        if st.button("Zur Registrierung", key="switch_register"):
+            st.session_state.mode = "register"
 
-if st.session_state.user:
+    if st.session_state.mode == "login":
+        login()
+    else:
+        register()
+
+def fragebogen():
     st.success(f"Eingeloggt als {st.session_state.user.email}")
     if st.button("Logout", key="logout_button"):
         logout()
+        return
 
     with st.form("fitness_fragebogen"):
         st.header("Persönliche Daten")
@@ -94,7 +123,6 @@ if st.session_state.user:
         goalDetail = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
         st.subheader("Medizinische Fragen")
-
         surgery = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", expanded=(surgery == "Ja")):
             surgeryDetails = st.text_area("OP-Details", value="")
@@ -128,7 +156,7 @@ if st.session_state.user:
             strokeDetails = st.text_area("Schlaganfall-Details", value="")
 
         healthOther = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
-        goalsDetail = st.text_area("Was sind deine konkreten Ziele beim Training?")
+        goalsDetailExtra = st.text_area("Was sind deine konkreten Ziele beim Training?")
         healthCondition = st.text_area("Wie ist dein aktueller Gesundheitszustand?")
         restrictions = st.text_area("Gibt es Einschränkungen bei Bewegung oder Sport?")
         pains = st.text_area("Wo spürst du Schmerzen oder Beschwerden?")
@@ -180,7 +208,7 @@ if st.session_state.user:
                 "stroke": stroke,
                 "strokeDetails": strokeDetails,
                 "healthOther": healthOther,
-                "goalsDetail": goalsDetail,
+                "goalsDetail": goalsDetailExtra,
                 "healthCondition": healthCondition,
                 "restrictions": restrictions,
                 "pains": pains,
@@ -204,5 +232,9 @@ if st.session_state.user:
                 st.error(f"❌ Fehler beim Supabase-Speichern: {response_db.status_code} - {response_db.text}")
             st.info(f"📱 **Deine Benutzer-ID:** `{st.session_state.user.id}`\nBitte speichern oder Screenshot machen!")
 
+st.title("Fitness- und Gesundheitsfragebogen (mit Login & Registrierung)")
+
+if st.session_state.user:
+    fragebogen()
 else:
-    login()
+    auth_flow()

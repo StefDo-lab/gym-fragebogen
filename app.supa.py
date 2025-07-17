@@ -58,6 +58,11 @@ def load_user_workouts(user_uuid):
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
     if "completed" in df.columns:
         df["completed"] = df["completed"].apply(lambda x: True if x is True else False)
+    
+    # Sortiere nach ID, um die ursprüngliche Reihenfolge beizubehalten
+    if not df.empty and 'id' in df.columns:
+        df = df.sort_values('id')
+    
     return df
 
 def analyze_workout_history(user_uuid):
@@ -148,6 +153,46 @@ def add_set_to_exercise(user_uuid, exercise_data, new_set_number):
     }
     return insert_supabase_data(TABLE_WORKOUT, new_row)
 
+def add_exercise_to_workout(user_uuid, workout_name, exercise_name, sets=3, weight=0, reps="10"):
+    """Fügt eine neue Übung zu einem Workout hinzu"""
+    # Hole die aktuellen Daten für dieses Workout
+    df = load_user_workouts(user_uuid)
+    workout_data = df[df['workout'] == workout_name].iloc[0] if not df[df['workout'] == workout_name].empty else None
+    
+    if workout_data is None:
+        st.error("Workout nicht gefunden")
+        return False
+    
+    success = True
+    for set_num in range(1, sets + 1):
+        new_row = {
+            'uuid': user_uuid,
+            'date': str(workout_data['date']),
+            'name': str(workout_data['name']),
+            'workout': workout_name,
+            'exercise': exercise_name,
+            'set': set_num,
+            'weight': weight,
+            'reps': str(reps),
+            'unit': 'kg',
+            'type': '',
+            'completed': False,
+            'messageToCoach': '',
+            'messageFromCoach': '',
+            'rirSuggested': 0,
+            'rirDone': 0,
+            'time': None,
+            'generalStatementFrom': '',
+            'generalStatementTo': '',
+            'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
+            'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
+        }
+        if not insert_supabase_data(TABLE_WORKOUT, new_row):
+            success = False
+            break
+    
+    return success
+
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
 if not st.session_state.userid:
@@ -167,9 +212,44 @@ with tab1:
     if df.empty:
         st.info("Keine Workouts gefunden.")
     else:
-        for workout_name, workout_group in df.groupby("workout"):
+        # Gruppiere nach Workout, behalte aber die Reihenfolge bei
+        workout_order = df.groupby('workout').first().sort_values('id').index
+        
+        for workout_name in workout_order:
+            workout_group = df[df['workout'] == workout_name]
             with st.expander(f"🏋️ {workout_name}", expanded=True):
-                for exercise_name, exercise_group in workout_group.groupby("exercise"):
+                # Button zum Hinzufügen einer neuen Übung
+                with st.form(key=f"add_exercise_form_{workout_name}"):
+                    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                    with col1:
+                        new_exercise_name = st.text_input("Neue Übung", placeholder="z.B. Bizeps Curls")
+                    with col2:
+                        new_exercise_sets = st.number_input("Sätze", min_value=1, value=3)
+                    with col3:
+                        new_exercise_weight = st.number_input("Gewicht", min_value=0.0, value=0.0, step=0.5)
+                    with col4:
+                        new_exercise_reps = st.number_input("Wdh", min_value=1, value=10)
+                    
+                    if st.form_submit_button("➕ Übung hinzufügen"):
+                        if new_exercise_name:
+                            if add_exercise_to_workout(
+                                st.session_state.userid, 
+                                workout_name, 
+                                new_exercise_name, 
+                                new_exercise_sets, 
+                                new_exercise_weight, 
+                                str(new_exercise_reps)
+                            ):
+                                st.success(f"Übung '{new_exercise_name}' hinzugefügt!")
+                                st.rerun()
+                        else:
+                            st.error("Bitte gib einen Übungsnamen ein")
+                
+                # Gruppiere nach Übung, behalte aber die Reihenfolge bei
+                exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
+                
+                for exercise_name in exercise_order:
+                    exercise_group = workout_group[workout_group['exercise'] == exercise_name]
                     with st.expander(f"💪 {exercise_name}", expanded=False):
                         # Nachricht vom Coach anzeigen, falls vorhanden
                         coach_msg = exercise_group.iloc[0]['messageFromCoach']
@@ -193,6 +273,9 @@ with tab1:
                                     if delete_supabase_data(TABLE_WORKOUT, last_set_id):
                                         st.success("Satz gelöscht!")
                                         st.rerun()
+                        
+                        # Sortiere Sätze nach Satz-Nummer
+                        exercise_group = exercise_group.sort_values('set')
                         
                         for idx, row in exercise_group.iterrows():
                             completed = row['completed']

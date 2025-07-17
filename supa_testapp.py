@@ -3,18 +3,37 @@ from supabase import create_client, Client
 
 # ---- Supabase Setup ----
 SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_KEY = "your-anon-key"
+SUPABASE_KEY = "your-public-anon-key"
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ---- Session State Setup ----
+# ---- Session State ----
 if "user" not in st.session_state:
     st.session_state.user = None
+if "mode" not in st.session_state:
+    st.session_state.mode = "login"
 
-# ---- Login Form ----
+# ---- Registration ----
+def register():
+    st.subheader("Registrierung")
+    email = st.text_input("E-Mail", key="reg_email")
+    password = st.text_input("Passwort", type="password", key="reg_pw")
+    if st.button("Registrieren"):
+        try:
+            res = supabase.auth.sign_up({
+                "email": email,
+                "password": password
+            })
+            if res.user:
+                st.success("Registrierung erfolgreich! Bitte E-Mail bestätigen.")
+                st.session_state.mode = "login"
+        except Exception as e:
+            st.error(f"Registrierung fehlgeschlagen: {e}")
+
+# ---- Login ----
 def login():
     st.subheader("Login")
-    email = st.text_input("Email")
-    password = st.text_input("Passwort", type="password")
+    email = st.text_input("E-Mail", key="login_email")
+    password = st.text_input("Passwort", type="password", key="login_pw")
     if st.button("Einloggen"):
         try:
             res = supabase.auth.sign_in_with_password({
@@ -33,7 +52,7 @@ def logout():
     st.success("Du wurdest ausgeloggt.")
 
 # ---- Main ----
-st.title("MyGymBuddy - Login Test")
+st.title("MyGymBuddy - Login & Registrierung")
 
 if st.session_state.user:
     st.success(f"Eingeloggt als {st.session_state.user.email}")
@@ -41,4 +60,15 @@ if st.session_state.user:
     if st.button("Logout"):
         logout()
 else:
-    login()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Login"):
+            st.session_state.mode = "login"
+    with col2:
+        if st.button("Registrieren"):
+            st.session_state.mode = "register"
+
+    if st.session_state.mode == "login":
+        login()
+    else:
+        register()

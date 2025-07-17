@@ -101,52 +101,96 @@ def analyze_workout_history(user_uuid):
 def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = "Allgemeines Training"
+    current_workout = None  # Startet mit None statt "Allgemeines Training"
     lines = plan_text.split('\n')
+    
     for line in lines:
         line = line.strip()
         if not line:
             continue
-        workout_match = re.match(r'^\*\*(.+?):\*\*', line)
-        if workout_match:
-            current_workout = workout_match.group(1).strip()
+            
+        # Verbesserte Erkennung von Workout-Namen
+        # Suche nach **Text:** oder ähnlichen Mustern
+        workout_patterns = [
+            r'^\*\*(.+?):\*\*',  # **Workout Name:**
+            r'^##\s*(.+)',       # ## Workout Name
+            r'^###\s*(.+)',      # ### Workout Name
+            r'^(.+):$'           # Workout Name:
+        ]
+        
+        workout_found = False
+        for pattern in workout_patterns:
+            workout_match = re.match(pattern, line)
+            if workout_match:
+                current_workout = workout_match.group(1).strip()
+                workout_found = True
+                break
+        
+        if workout_found:
             continue
+            
+        # Wenn noch kein Workout definiert wurde, überspringe
+        if current_workout is None:
+            continue
+            
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
             details = exercise_match.group(2).strip()
+            
             try:
                 sets, weight, reps, explanation = 3, 0.0, "10", ""
+                
                 explanation_match = re.search(r'\((?:Erklärung|Fokus):\s*(.+?)\)', details)
                 if explanation_match:
                     explanation = explanation_match.group(1).strip()
                     details = details.replace(explanation_match.group(0), '').strip()
+
                 sets_match = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', details)
                 if sets_match:
                     sets = int(sets_match.group(1))
+
                 weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
                 if weight_match:
                     weight = float(weight_match.group(1).replace(',', '.'))
                 elif "körpergewicht" in details.lower() or "bw" in details.lower():
                     weight = 0.0
+
                 reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match:
                     reps = reps_match.group(1).strip()
+
                 for satz in range(1, sets + 1):
                     rows.append({
-                        'uuid': user_uuid, 'date': current_date, 'name': user_name,
-                        'workout': current_workout, 'exercise': exercise_name,
-                        'set': satz, 'weight': weight,
+                        'uuid': user_uuid, 
+                        'date': current_date, 
+                        'name': user_name,
+                        'workout': current_workout,  # Verwendet den erkannten Workout-Namen
+                        'exercise': exercise_name,
+                        'set': satz, 
+                        'weight': weight,
                         'reps': reps.split('-')[0] if '-' in str(reps) else reps,
-                        'unit': 'kg', 'type': '', 'completed': False,
-                        'messageToCoach': '', 'messageFromCoach': explanation,
-                        'rirSuggested': 0, 'rirDone': 0, 'generalStatementFrom': '', 'generalStatementTo': '',
+                        'unit': 'kg', 
+                        'type': '', 
+                        'completed': False,
+                        'messageToCoach': '', 
+                        'messageFromCoach': explanation,
+                        'rirSuggested': 0, 
+                        'rirDone': 0, 
+                        'generalStatementFrom': '', 
+                        'generalStatementTo': '',
                         'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
                         'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
                     })
             except Exception as e:
                 st.warning(f"Parsing-Fehler bei Übung '{line}': {e}")
+            
             continue
+    
+    # Debug-Info
+    if not rows and current_workout is None:
+        st.warning("⚠️ Keine Workout-Namen gefunden. Bitte stelle sicher, dass die KI Workout-Namen im Format **Name:** generiert.")
+    
     return rows
 
 def add_set_to_exercise(user_uuid, exercise_data, new_set_number):
@@ -273,7 +317,7 @@ def delete_workout(user_uuid, workout_name):
     return success
 
 def archive_completed_workouts(user_uuid):
-    """Archiviert alle erledigten Workouts"""
+    """Archiviert alle erledigten Workouts und setzt sie zurück"""
     df = load_user_workouts(user_uuid)
     completed = df[df['completed'] == True]
     
@@ -283,6 +327,7 @@ def archive_completed_workouts(user_uuid):
     # Speichere in Archive
     success = True
     archived_count = 0
+    reset_count = 0
     
     for _, row in completed.iterrows():
         archive_row = {
@@ -300,15 +345,23 @@ def archive_completed_workouts(user_uuid):
         }
         
         if insert_supabase_data(TABLE_ARCHIVE, archive_row):
-            # Lösche aus Workout-Tabelle
-            if delete_supabase_data(TABLE_WORKOUT, row['id']):
-                archived_count += 1
+            archived_count += 1
+            
+            # Setze den Workout zurück (nicht löschen!)
+            reset_update = {
+                'completed': False,
+                'messageToCoach': '',  # Lösche die Nachricht
+                'time': None  # Setze Zeit zurück
+            }
+            
+            if update_supabase_data(TABLE_WORKOUT, reset_update, row['id']):
+                reset_count += 1
             else:
                 success = False
         else:
             success = False
     
-    return success, f"{archived_count} Einträge archiviert"
+    return success, f"{archived_count} Einträge archiviert und {reset_count} zurückgesetzt"
 
 def export_to_csv(df):
     """Exportiert DataFrame als CSV"""
@@ -627,11 +680,22 @@ with tab2:
                 Split-Typ: {split_type}
                 Fokus: {focus}
                 
-                WICHTIG:
-                1. Jeder Trainingstag MUSS mit **Workout-Name:** beginnen
-                2. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
-                3. {weight_instruction}
-                4. Keine zusätzlichen Erklärungen oder Texte am Ende
+                WICHTIGE FORMATIERUNG:
+                1. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
+                2. Verwende aussagekräftige Namen wie:
+                   - **Oberkörper Push:**
+                   - **Unterkörper Pull:**
+                   - **Ganzkörper A:**
+                   - **Brust & Trizeps:**
+                   NICHT nur "Workout-Name"!
+                3. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
+                4. {weight_instruction}
+                5. Keine zusätzlichen Erklärungen oder Texte am Ende
+                
+                Beispiel-Format:
+                **Oberkörper Push:**
+                - Bankdrücken: 3 Sätze, 8-10 Wdh, 60 kg (Fokus: Brustmuskulatur)
+                - Schulterdrücken: 3 Sätze, 10-12 Wdh, 30 kg (Fokus: Vordere Schulter)
                 
                 Erstelle nur die Workouts mit den Übungen, sonst nichts.
                 """

@@ -5,6 +5,7 @@ import pandas as pd
 import re
 from openai import OpenAI
 import io
+import json
 
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
@@ -19,8 +20,180 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-st.set_page_config(page_title="Workout Tracker", layout="wide")
-st.title("Workout Tracker")
+st.set_page_config(
+    page_title="Workout Tracker",
+    page_icon="💪",
+    layout="wide",
+    initial_sidebar_state="collapsed"  # Für mehr App-Feeling
+)
+
+# ---- PWA-Style Injection ----
+def inject_mobile_styles():
+    st.markdown("""
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#FF4B4B">
+    
+    <style>
+        /* Verstecke Streamlit-Elemente für App-Look */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden !important;}
+        
+        /* Reduziere Top-Padding */
+        .block-container {
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            max-width: 100%;
+        }
+        
+        /* Mobile-optimierte Buttons */
+        .stButton > button {
+            width: 100%;
+            min-height: 50px;
+            font-size: 16px;
+            border-radius: 25px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        /* Bessere Touch-Targets */
+        .stNumberInput > div > div > input {
+            min-height: 45px;
+            font-size: 18px;
+            text-align: center;
+        }
+        
+        /* iOS-Style Cards */
+        .exercise-card {
+            background: white;
+            border-radius: 12px;
+            padding: 16px;
+            margin: 8px 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        /* Bottom Navigation Style */
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+            padding: 8px;
+            z-index: 999;
+        }
+        
+        /* Safe Area für iOS */
+        .main {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        /* Große Touch-Bereiche für Expander */
+        .streamlit-expanderHeader {
+            min-height: 50px;
+            font-size: 18px;
+        }
+        
+        /* Vibrant Colors */
+        .stButton > button[kind="primary"] {
+            background-color: #FF4B4B;
+            color: white;
+        }
+        
+        /* Success Animation */
+        @keyframes success-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .success-animation {
+            animation: success-pulse 0.5s ease;
+        }
+    </style>
+    
+    <script>
+        // Verhindere Zoom auf iOS
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        });
+        
+        // Haptic Feedback (wo unterstützt)
+        function triggerHaptic() {
+            if (window.navigator && window.navigator.vibrate) {
+                window.navigator.vibrate(10);
+            }
+        }
+        
+        // Local Storage Funktionen
+        function saveToLocal(key, value) {
+            localStorage.setItem(key, JSON.stringify(value));
+        }
+        
+        function getFromLocal(key) {
+            const value = localStorage.getItem(key);
+            return value ? JSON.parse(value) : null;
+        }
+        
+        // Offline-Erkennung
+        window.addEventListener('online', () => {
+            document.body.classList.remove('offline');
+        });
+        
+        window.addEventListener('offline', () => {
+            document.body.classList.add('offline');
+            alert('Du bist offline. Änderungen werden gespeichert, sobald du wieder online bist.');
+        });
+    </script>
+    """, unsafe_allow_html=True)
+
+# Rufe das gleich am Anfang auf
+inject_mobile_styles()
+
+# ---- App Header mit mobilem Look ----
+def show_mobile_header():
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        if st.button("☰", key="menu"):
+            st.session_state.show_sidebar = not st.session_state.get('show_sidebar', False)
+    with col2:
+        st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout</h1>", unsafe_allow_html=True)
+    with col3:
+        if st.button("👤", key="profile"):
+            st.session_state.show_profile = not st.session_state.get('show_profile', False)
+
+# ---- Installation Prompt ----
+def show_install_prompt():
+    if 'install_prompted' not in st.session_state:
+        st.session_state.install_prompted = False
+    
+    if not st.session_state.install_prompted:
+        with st.container():
+            st.info("📱 **App installieren für bessere Erfahrung!**")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Installieren", type="primary"):
+                    st.markdown("""
+                    <script>
+                    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                        alert('iOS: Tippe auf das Teilen-Symbol (□↑) und dann "Zum Home-Bildschirm"');
+                    } else if (/Android/.test(navigator.userAgent)) {
+                        alert('Android: Tippe auf die drei Punkte (⋮) und dann "App installieren"');
+                    } else {
+                        alert('Desktop: Nutze Chrome und klicke auf das Install-Symbol in der Adressleiste');
+                    }
+                    </script>
+                    """, unsafe_allow_html=True)
+                    st.session_state.install_prompted = True
+            with col2:
+                if st.button("Später"):
+                    st.session_state.install_prompted = True
+                    st.rerun()
 
 # ---- OpenAI Setup ----
 try:
@@ -369,16 +542,36 @@ def export_to_csv(df):
 
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
+
 if not st.session_state.userid:
-    uid = st.text_input("UserID", type="password")
-    if st.button("Login"):
-        st.session_state.userid = uid.strip()
-        st.rerun()
+    # Zeige Install-Prompt beim ersten Besuch
+    show_install_prompt()
+    
+    st.markdown("<h2 style='text-align: center;'>Willkommen zurück! 👋</h2>", unsafe_allow_html=True)
+    
+    # Zentrierter Login
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        uid = st.text_input("UserID", type="password", placeholder="Deine UserID eingeben")
+        
+        if st.button("Login", type="primary", use_container_width=True):
+            if uid:
+                st.session_state.userid = uid.strip()
+                # Haptic Feedback
+                st.markdown("<script>triggerHaptic();</script>", unsafe_allow_html=True)
+                st.success("Eingeloggt!")
+                st.rerun()
     st.stop()
 
+# Mobile Header
+show_mobile_header()
+
+# Sidebar Info
 st.sidebar.success(f"Eingeloggt als {st.session_state.userid}")
 
-tab1, tab2, tab3, tab4 = st.tabs(["💪 Training", "🤖 KI-Trainer", "📈 Analyse", "⚙️ Verwaltung"])
+# Mobile-optimierte Tabs
+tab_names = ["🏋️ Training", "🤖 KI-Plan", "📊 Stats", "⚙️ Mehr"]
+tab1, tab2, tab3, tab4 = st.tabs(tab_names)
 
 with tab1:
     st.subheader("Deine Workouts")

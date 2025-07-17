@@ -122,6 +122,32 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
             continue
     return rows
 
+def add_set_to_exercise(user_uuid, exercise_data, new_set_number):
+    """Fügt einen neuen Satz zu einer Übung hinzu"""
+    new_row = {
+        'uuid': user_uuid,
+        'date': exercise_data['date'],
+        'name': exercise_data['name'],
+        'workout': exercise_data['workout'],
+        'exercise': exercise_data['exercise'],
+        'set': new_set_number,
+        'weight': exercise_data['weight'],
+        'reps': exercise_data['reps'],
+        'unit': 'kg',
+        'type': '',
+        'completed': False,
+        'messageToCoach': '',
+        'messageFromCoach': exercise_data.get('messageFromCoach', ''),
+        'rirSuggested': 0,
+        'rirDone': 0,
+        'time': None,
+        'generalStatementFrom': '',
+        'generalStatementTo': '',
+        'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
+        'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
+    }
+    return insert_supabase_data(TABLE_WORKOUT, new_row)
+
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
 if not st.session_state.userid:
@@ -149,6 +175,24 @@ with tab1:
                         coach_msg = exercise_group.iloc[0]['messageFromCoach']
                         if coach_msg and coach_msg.strip():
                             st.info(f"💬 Hinweis vom Coach: {coach_msg}")
+                        
+                        # Buttons für Satzverwaltung
+                        col_add, col_del, col_space = st.columns([1, 1, 3])
+                        with col_add:
+                            if st.button("➕ Satz hinzufügen", key=f"add_set_{exercise_name}_{workout_name}"):
+                                last_set = exercise_group.iloc[-1]
+                                new_set_number = exercise_group['set'].max() + 1
+                                if add_set_to_exercise(st.session_state.userid, last_set.to_dict(), new_set_number):
+                                    st.success("Satz hinzugefügt!")
+                                    st.rerun()
+                        
+                        with col_del:
+                            if len(exercise_group) > 1:
+                                if st.button("➖ Letzten Satz löschen", key=f"del_set_{exercise_name}_{workout_name}"):
+                                    last_set_id = exercise_group.iloc[-1]['id']
+                                    if delete_supabase_data(TABLE_WORKOUT, last_set_id):
+                                        st.success("Satz gelöscht!")
+                                        st.rerun()
                         
                         for idx, row in exercise_group.iterrows():
                             completed = row['completed']

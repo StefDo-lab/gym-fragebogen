@@ -54,6 +54,15 @@ def login():
                 st.success(f"Willkommen, {res.user.email}")
         except Exception as e:
             st.error(f"Login fehlgeschlagen: {e}")
+    if st.button("Passwort vergessen?"):
+        if email:
+            try:
+                supabase.auth.reset_password_email(email)
+                st.success("Passwort-Reset-E-Mail wurde versendet.")
+            except Exception as e:
+                st.error(f"Fehler beim Senden der Reset-E-Mail: {e}")
+        else:
+            st.warning("Bitte gib deine E-Mail-Adresse ein.")
 
 def register():
     st.subheader("Registrieren")
@@ -94,6 +103,8 @@ def fragebogen():
     if st.button("Logout", key="logout_button"):
         logout()
         return
+
+    st.markdown("**Deine Benutzer-ID:** `{}`".format(st.session_state.user.id))
 
     with st.form("fitness_fragebogen"):
         st.header("Persönliche Daten")
@@ -174,7 +185,7 @@ def fragebogen():
             st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
         else:
             data_payload = {
-                "uuid": st.session_state.user.id,
+                "user_id": st.session_state.user.id,
                 "uuid": str(uuid.uuid4()),
                 "forename": forename,
                 "surename": surename,
@@ -230,7 +241,6 @@ def fragebogen():
                     st.warning("⚠️ Webhook konnte nicht gesendet werden.")
             else:
                 st.error(f"❌ Fehler beim Supabase-Speichern: {response_db.status_code} - {response_db.text}")
-            st.info(f"📱 **Deine Benutzer-ID:** `{st.session_state.user.id}`\nBitte speichern oder Screenshot machen!")
 
 st.title("Fitness- und Gesundheitsfragebogen (mit Login & Registrierung)")
 

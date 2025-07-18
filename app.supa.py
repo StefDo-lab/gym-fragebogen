@@ -498,7 +498,7 @@ def archive_completed_workouts(user_uuid):
         archive_row = {
             'uuid': row['uuid'],
             'date': row['date'],
-            'time': row.get('time'),
+            'time': str(row.get('time')) if row.get('time') else None,
             'name': row['name'],
             'workout': row['workout'],
             'exercise': row['exercise'],

@@ -484,10 +484,19 @@ def delete_workout(user_uuid, workout_name):
 def archive_completed_workouts(user_uuid):
     """Archiviert alle erledigten Workouts und setzt sie zurück"""
     df = load_user_workouts(user_uuid)
+    
+    # DEBUG
+    st.write(f"DEBUG: Total workouts: {len(df)}")
+    st.write(f"DEBUG: Completed column type: {df['completed'].dtype if 'completed' in df.columns else 'NO COLUMN'}")
+    st.write(f"DEBUG: Completed values: {df['completed'].unique() if 'completed' in df.columns else 'NO COLUMN'}")
+    
     completed = df[df['completed'] == True]
+    st.write(f"DEBUG: Completed workouts found: {len(completed)}")
     
     if completed.empty:
         return False, "Keine erledigten Workouts zum Archivieren"
+    # ... rest
+
     
     # Speichere in Archive
     success = True

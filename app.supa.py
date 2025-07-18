@@ -564,8 +564,18 @@ if not st.session_state.userid:
                         if response.user:
                             st.session_state.userid = response.user.id
                             st.session_state.user_email = email
+    
+                            # DEBUG: Zeige die UUID
+                            st.write(f"DEBUG - Auth UUID: {response.user.id}")
+                            st.write(f"DEBUG - UUID Type: {type(response.user.id)}")
+    
+                            # Teste direkt einen Query
+                            test_data = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{response.user.id}")
+                            st.write(f"DEBUG - Gefundene Workouts: {len(test_data)}")
+    
                             st.success("Erfolgreich angemeldet!")
-                            st.rerun()
+                            # Kommentiere st.rerun() erstmal aus für Debug
+                            # st.rerun()
                         else:
                             st.error("Anmeldung fehlgeschlagen")
                             

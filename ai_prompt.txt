@@ -21,7 +21,7 @@ TRAININGSPARAMETER:
 - Split-Typ: {split_type}
 - Fokus: {focus}
 
-Mach dir aus den Angaben deiner Kunden ein möglichst genaues Bild und beziehe alle verfügbaren angaben ein.
+Mach dir aus den Angaben deiner Kunden ein möglichst genaues Bild und beziehe alle verfügbaren angaben ein. Es steht dir ein voll ausgestattetes Gym zur Verfügung, mit umfangreicher Asurüstung für Athletik.Training wie Airbike, Kettlebelles und Schlitten, alle Maschinen sowie Lang- und Kurzahnteln sowie diverse Spezialaussstattung wie T-Bar (Landmine), Trapbar, Safety Squat Bar, etc.
 
 WICHTIGE FORMATIERUNGSREGELN:
 1. Erstelle GENAU {training_days} Trainingstage

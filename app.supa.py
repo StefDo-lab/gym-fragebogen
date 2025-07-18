@@ -560,22 +560,39 @@ if not st.session_state.userid:
                             "email": email,
                             "password": password
                         })
-                        
+        
                         if response.user:
-                            st.session_state.userid = response.user.id
+                            # HIER KOMMT DER NEUE CODE HIN (ersetze alles bis else:)
+                            auth_uuid = response.user.id
                             st.session_state.user_email = email
-    
-                            # DEBUG: Zeige die UUID
-                            st.write(f"DEBUG - Auth UUID: {response.user.id}")
-                            st.write(f"DEBUG - UUID Type: {type(response.user.id)}")
-    
-                            # Teste direkt einen Query
-                            test_data = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{response.user.id}")
-                            st.write(f"DEBUG - Gefundene Workouts: {len(test_data)}")
-    
-                            st.success("Erfolgreich angemeldet!")
-                            # Kommentiere st.rerun() erstmal aus für Debug
-                            # st.rerun()
+            
+                            # DEBUG
+                            st.write(f"DEBUG - Auth UUID: {auth_uuid}")
+                            st.write(f"DEBUG - Email: {email}")
+            
+                            # Hole die richtige UUID aus der questionaire Tabelle über die Email
+                            user_profile_data = get_supabase_data(
+                                TABLE_QUESTIONNAIRE, 
+                                f"email=eq.{email}"
+                            )
+            
+                            st.write(f"DEBUG - Profile gefunden: {len(user_profile_data)}")
+            
+                            if user_profile_data and len(user_profile_data) > 0:
+                                # Verwende die UUID aus der questionaire Tabelle
+                                data_uuid = user_profile_data[0]['uuid']
+                                st.session_state.userid = data_uuid
+                
+                                st.write(f"DEBUG - Daten UUID: {data_uuid}")
+                
+                                # Teste ob jetzt Workouts gefunden werden
+                                test_workouts = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{data_uuid}")
+                                st.write(f"DEBUG - Workouts mit Daten-UUID: {len(test_workouts)}")
+                
+                                st.success("Erfolgreich angemeldet!")
+                                # st.rerun()  # Erstmal auskommentiert für Debug
+                            else:
+                                st.error("Benutzerprofil nicht gefunden. Bitte erst Fragebogen ausfüllen!")
                         else:
                             st.error("Anmeldung fehlgeschlagen")
                             

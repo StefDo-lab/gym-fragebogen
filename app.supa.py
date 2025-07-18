@@ -562,39 +562,27 @@ if not st.session_state.userid:
                         })
         
                         if response.user:
-                            # HIER KOMMT DER NEUE CODE HIN (ersetze alles bis else:)
                             auth_uuid = response.user.id
                             st.session_state.user_email = email
-            
-                            # DEBUG
-                            st.write(f"DEBUG - Auth UUID: {auth_uuid}")
-                            st.write(f"DEBUG - Email: {email}")
-            
+    
                             # Hole die richtige UUID aus der questionaire Tabelle über die Email
                             user_profile_data = get_supabase_data(
                                 TABLE_QUESTIONNAIRE, 
                                 f"email=eq.{email}"
                             )
-            
-                            st.write(f"DEBUG - Profile gefunden: {len(user_profile_data)}")
-            
+    
                             if user_profile_data and len(user_profile_data) > 0:
                                 # Verwende die UUID aus der questionaire Tabelle
                                 data_uuid = user_profile_data[0]['uuid']
                                 st.session_state.userid = data_uuid
-                
-                                st.write(f"DEBUG - Daten UUID: {data_uuid}")
-                
-                                # Teste ob jetzt Workouts gefunden werden
-                                test_workouts = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{data_uuid}")
-                                st.write(f"DEBUG - Workouts mit Daten-UUID: {len(test_workouts)}")
-                
+        
                                 st.success("Erfolgreich angemeldet!")
-                                # st.rerun()  # Erstmal auskommentiert für Debug
+                                st.rerun()  # Wichtig: st.rerun() ist jetzt wieder aktiv!
                             else:
                                 st.error("Benutzerprofil nicht gefunden. Bitte erst Fragebogen ausfüllen!")
                         else:
                             st.error("Anmeldung fehlgeschlagen")
+
                             
                     except Exception as e:
                         if "Invalid login credentials" in str(e):

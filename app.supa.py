@@ -232,7 +232,7 @@ def load_user_workouts(user_uuid):
     if "reps" in df.columns:
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
     if "completed" in df.columns:
-        df["completed"] = df["completed"].apply(lambda x: True if x is True else False)
+        df["completed"] = df["completed"].astype(bool)
     
     # Sortiere nach ID, um die ursprüngliche Reihenfolge beizubehalten
     if not df.empty and 'id' in df.columns:

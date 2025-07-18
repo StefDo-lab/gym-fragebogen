@@ -1087,12 +1087,19 @@ with tab4:
         st.info("Erledigte Workouts werden normalerweise automatisch um 23:59 Uhr archiviert.")
         
         if st.button("📦 Manuell archivieren", type="primary"):
-            success, message = archive_completed_workouts(st.session_state.userid)
-            if success:
-                st.success(message)
-                st.rerun()
-            else:
-                st.warning(message)
+            # Debug direkt hier
+            df_test = load_user_workouts(st.session_state.userid)
+            st.write(f"DEBUG Button: Workouts geladen: {len(df_test) if df_test is not None else 'NONE'}")
+            st.write(f"DEBUG Button: Columns: {df_test.columns.tolist() if df_test is not None and not df_test.empty else 'NO COLUMNS'}")
+    
+        # Dann erst die Funktion
+        success, message = archive_completed_workouts(st.session_state.userid)
+        if success:
+            st.success(message)
+            st.rerun()
+        else:
+            st.warning(message)
+
     
     with col2:
         st.markdown("### Daten-Export")

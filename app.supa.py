@@ -518,6 +518,20 @@ def archive_completed_workouts(user_uuid):
             'messageToCoach': row.get('messageToCoach', '')
         }
         
+        # DEBUG: Zeige erste Row
+        if archived_count == 0:
+            st.write("DEBUG: Erste Archive Row:")
+            st.write(archive_row)
+    
+        result = insert_supabase_data(TABLE_ARCHIVE, archive_row)
+        st.write(f"DEBUG: Insert result: {result}")
+    
+        if result:
+            archived_count += 1
+        else:
+            st.error(f"Failed to archive row {row['id']}")
+            break  # Stoppe bei erstem Fehler
+        
         if insert_supabase_data(TABLE_ARCHIVE, archive_row):
             archived_count += 1
             

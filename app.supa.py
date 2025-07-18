@@ -195,6 +195,88 @@ except Exception as e:
     st.error(f"Fehler beim Initialisieren des OpenAI-Clients: {e}")
     client = None
 
+# ---- KI-Prompt Template ----
+def get_ai_prompt_template():
+    """Lädt das KI-Prompt Template und Konfiguration aus einer externen Datei."""
+    config = {
+        'temperature': 0.7,
+        'model': 'gpt-4o-mini',
+        'max_tokens': 2000,
+        'top_p': 1.0,
+        'prompt': ''
+    }
+    
+    try:
+        with open('ai_prompt.txt', 'r', encoding='utf-8') as file:
+            content = file.read()
+            
+        # Parse Konfiguration wenn vorhanden
+        if '### KONFIGURATION ###' in content and '### ENDE KONFIGURATION ###' in content:
+            config_section = content.split('### KONFIGURATION ###')[1].split('### ENDE KONFIGURATION ###')[0]
+            prompt_section = content.split('### ENDE KONFIGURATION ###')[1]
+            
+            # Parse config values
+            for line in config_section.strip().split('\n'):
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    if key == 'temperature':
+                        config['temperature'] = float(value)
+                    elif key == 'model':
+                        config['model'] = value
+                    elif key == 'max_tokens':
+                        config['max_tokens'] = int(value)
+                    elif key == 'top_p':
+                        config['top_p'] = float(value)
+            
+            config['prompt'] = prompt_section.strip()
+        else:
+            # Keine Konfiguration gefunden, ganzer Inhalt ist Prompt
+            config['prompt'] = content
+            
+    except FileNotFoundError:
+        st.error("ai_prompt.txt nicht gefunden! Verwende eingebautes Template.")
+        config['prompt'] = """
+Erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
+
+BENUTZERPROFIL:
+{profile}
+
+TRAININGSHISTORIE UND FORTSCHRITT:
+{history_analysis}
+
+ZUSÄTZLICHE WÜNSCHE:
+{additional_info}
+
+TRAININGSPARAMETER:
+- Trainingstage pro Woche: {training_days}
+- Split-Typ: {split_type}
+- Fokus: {focus}
+
+WICHTIGE FORMATIERUNGSREGELN:
+1. Erstelle GENAU {training_days} Trainingstage
+2. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
+3. Verwende aussagekräftige Namen wie:
+   - **Oberkörper Push:**
+   - **Unterkörper Pull:**
+   - **Ganzkörper A:**
+   - **Brust & Trizeps:**
+4. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
+5. Basiere die Gewichte auf der Trainingshistorie und den Fortschritten
+6. Berücksichtige die RIR-Werte und Coach-Nachrichten für die Intensitätsanpassung
+7. {weight_instruction}
+
+BEISPIEL-FORMAT:
+**Oberkörper Push:**
+- Bankdrücken: 3 Sätze, 8-10 Wdh, 65 kg (Fokus: Progressive Überlastung)
+- Schulterdrücken: 3 Sätze, 10-12 Wdh, 32.5 kg (Fokus: Kontrollierte Bewegung)
+
+Erstelle nur die Workouts mit den Übungen, keine zusätzlichen Erklärungen.
+"""
+    
+    return config
+
 def get_supabase_data(table, filters=None):
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     if filters:
@@ -241,27 +323,105 @@ def load_user_workouts(user_uuid):
     return df
 
 def analyze_workout_history(user_uuid):
+    """Analysiert die Trainingshistorie und bereitet detaillierte Informationen für die KI auf."""
     data = get_supabase_data(TABLE_ARCHIVE, f"uuid=eq.{user_uuid}")
     if not data:
-        return "Keine Archiv-Daten verfügbar.", pd.DataFrame()
+        return "Keine Trainingshistorie vorhanden.", pd.DataFrame()
+    
     df = pd.DataFrame(data)
     if "weight" in df.columns:
         df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(0)
     if "reps" in df.columns:
         df["reps"] = pd.to_numeric(df["reps"], errors="coerce").fillna(0)
+    if "rirDone" in df.columns:
+        df["rirDone"] = pd.to_numeric(df["rirDone"], errors="coerce").fillna(0)
     
-    # Erstelle Zusammenfassung
-    summary = []
-    if not df.empty:
-        exercises = df['exercise'].unique()
-        for exercise in exercises:
-            ex_data = df[df['exercise'] == exercise]
-            max_weight = ex_data['weight'].max()
-            avg_reps = ex_data['reps'].mean()
-            count = len(ex_data.groupby('date'))
-            summary.append(f"- {exercise}: Max {max_weight:.1f}kg, Ø {avg_reps:.0f} Wdh, {count}x trainiert")
+    # Konvertiere date zu datetime für bessere Analyse
+    df['date'] = pd.to_datetime(df['date'])
     
-    return "\n".join(summary) if summary else "Keine Trainingshistorie gefunden.", df
+    # Erstelle detaillierte Zusammenfassung
+    analysis_parts = []
+    
+    # 1. Allgemeine Statistiken
+    total_workouts = df['date'].nunique()
+    if total_workouts > 0:
+        first_workout = df['date'].min()
+        last_workout = df['date'].max()
+        days_training = (last_workout - first_workout).days + 1
+        frequency = total_workouts / max(days_training / 7, 1)  # Trainings pro Woche
+        
+        analysis_parts.append(f"TRAININGSÜBERSICHT:")
+        analysis_parts.append(f"- Trainingseinheiten gesamt: {total_workouts}")
+        analysis_parts.append(f"- Zeitraum: {first_workout.strftime('%d.%m.%Y')} bis {last_workout.strftime('%d.%m.%Y')}")
+        analysis_parts.append(f"- Durchschnittliche Frequenz: {frequency:.1f} Trainings/Woche")
+        analysis_parts.append("")
+    
+    # 2. Übungsanalyse mit Progression
+    analysis_parts.append("ÜBUNGSFORTSCHRITTE:")
+    exercises = df['exercise'].unique()
+    
+    for exercise in sorted(exercises):
+        ex_data = df[df['exercise'] == exercise].sort_values('date')
+        
+        # Berechne Fortschritt
+        first_weight = ex_data.iloc[0]['weight'] if len(ex_data) > 0 else 0
+        last_weight = ex_data.iloc[-1]['weight'] if len(ex_data) > 0 else 0
+        weight_progress = last_weight - first_weight
+        
+        # Durchschnittswerte
+        avg_weight = ex_data['weight'].mean()
+        avg_reps = ex_data['reps'].mean()
+        avg_rir = ex_data['rirDone'].mean()
+        max_weight = ex_data['weight'].max()
+        
+        # Trainingsanzahl
+        training_count = len(ex_data.groupby('date'))
+        
+        analysis_parts.append(f"\n{exercise}:")
+        analysis_parts.append(f"  - Trainiert: {training_count}x")
+        analysis_parts.append(f"  - Aktuelles Gewicht: {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
+        analysis_parts.append(f"  - Fortschritt: {weight_progress:+.1f} kg seit Beginn")
+        analysis_parts.append(f"  - Durchschnitt: {avg_weight:.1f} kg × {avg_reps:.0f} Wdh")
+        if avg_rir > 0:
+            analysis_parts.append(f"  - Durchschnittliche RIR: {avg_rir:.1f}")
+        
+        # Coach-Nachrichten für diese Übung
+        messages = ex_data[ex_data['messageToCoach'].notna() & (ex_data['messageToCoach'] != '')]
+        if not messages.empty:
+            analysis_parts.append(f"  - Feedback vom Athleten:")
+            for _, msg_row in messages.iterrows():
+                date_str = msg_row['date'].strftime('%d.%m.')
+                analysis_parts.append(f"    • {date_str}: \"{msg_row['messageToCoach']}\"")
+    
+    # 3. Workout-Split Analyse
+    analysis_parts.append("\nWORKOUT-VERTEILUNG:")
+    workout_counts = df.groupby('workout')['date'].nunique()
+    for workout, count in workout_counts.items():
+        analysis_parts.append(f"- {workout}: {count}x trainiert")
+    
+    # 4. Intensitätsanalyse basierend auf RIR
+    if 'rirDone' in df.columns and df['rirDone'].sum() > 0:
+        analysis_parts.append("\nINTENSITÄTSANALYSE:")
+        avg_rir_total = df[df['rirDone'] > 0]['rirDone'].mean()
+        analysis_parts.append(f"- Durchschnittliche RIR gesamt: {avg_rir_total:.1f}")
+        
+        # RIR nach Übung
+        rir_by_exercise = df[df['rirDone'] > 0].groupby('exercise')['rirDone'].mean().sort_values()
+        if len(rir_by_exercise) > 0:
+            analysis_parts.append("- Höchste Intensität (niedrigste RIR):")
+            for ex, rir in rir_by_exercise.head(3).items():
+                analysis_parts.append(f"  • {ex}: RIR {rir:.1f}")
+    
+    # 5. Allgemeine Coach-Nachrichten (nicht übungsspezifisch)
+    all_messages = df[df['messageToCoach'].notna() & (df['messageToCoach'] != '')]['messageToCoach'].unique()
+    if len(all_messages) > 0:
+        analysis_parts.append("\nALLGEMEINES FEEDBACK:")
+        for i, msg in enumerate(all_messages[:5]):  # Maximal 5 neueste Nachrichten
+            analysis_parts.append(f"- \"{msg}\"")
+    
+    summary = "\n".join(analysis_parts)
+    
+    return summary, df
 
 def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
     rows = []
@@ -351,10 +511,6 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
                 st.warning(f"Parsing-Fehler bei Übung '{line}': {e}")
             
             continue
-    
-    # Debug-Info
-    if not rows and current_workout is None:
-        st.warning("⚠️ Keine Workout-Namen gefunden. Bitte stelle sicher, dass die KI Workout-Namen im Format **Name:** generiert.")
     
     return rows
 
@@ -485,18 +641,10 @@ def archive_completed_workouts(user_uuid):
     """Archiviert alle erledigten Workouts und setzt sie zurück"""
     df = load_user_workouts(user_uuid)
     
-    # DEBUG
-    st.write(f"DEBUG: Total workouts: {len(df)}")
-    st.write(f"DEBUG: Completed column type: {df['completed'].dtype if 'completed' in df.columns else 'NO COLUMN'}")
-    st.write(f"DEBUG: Completed values: {df['completed'].unique() if 'completed' in df.columns else 'NO COLUMN'}")
-    
     completed = df[df['completed'] == True]
-    st.write(f"DEBUG: Completed workouts found: {len(completed)}")
     
     if completed.empty:
         return False, "Keine erledigten Workouts zum Archivieren"
-    # ... rest
-
     
     # Speichere in Archive
     success = True
@@ -517,20 +665,6 @@ def archive_completed_workouts(user_uuid):
             'rirDone': row.get('rirDone', 0),
             'messageToCoach': row.get('messageToCoach', '')
         }
-        
-        # DEBUG: Zeige erste Row
-        if archived_count == 0:
-            st.write("DEBUG: Erste Archive Row:")
-            st.write(archive_row)
-    
-        result = insert_supabase_data(TABLE_ARCHIVE, archive_row)
-        st.write(f"DEBUG: Insert result: {result}")
-    
-        if result:
-            archived_count += 1
-        else:
-            st.error(f"Failed to archive row {row['id']}")
-            break  # Stoppe bei erstem Fehler
         
         if insert_supabase_data(TABLE_ARCHIVE, archive_row):
             archived_count += 1
@@ -600,7 +734,7 @@ if not st.session_state.userid:
                                 st.session_state.userid = data_uuid
         
                                 st.success("Erfolgreich angemeldet!")
-                                st.rerun()  # Wichtig: st.rerun() ist jetzt wieder aktiv!
+                                st.rerun()
                             else:
                                 st.error("Benutzerprofil nicht gefunden. Bitte erst Fragebogen ausfüllen!")
                         else:
@@ -925,7 +1059,7 @@ with tab2:
                 profile_display = {k: v for k, v in profile.items() if k in relevant_keys and v}
                 st.json(profile_display)
             
-            st.text_area("Trainingshistorie:", value=history_summary, height=150, disabled=True)
+            st.text_area("Trainingshistorie & Fortschritt:", value=history_summary, height=200, disabled=True)
         
         additional_info = st.text_area(
             "Zusätzliche Wünsche für den Plan:",
@@ -942,49 +1076,32 @@ with tab2:
         
         if st.button("🤖 Plan generieren", type="primary"):
             with st.spinner("KI erstellt deinen personalisierten Plan..."):
-                # Erstelle Prompt
-                if "Keine" in history_summary:
+                # Lade Prompt und Config
+                ai_config = get_ai_prompt_template()
+                
+                # Erstelle Prompt mit Template
+                if "Keine Trainingshistorie vorhanden" in history_summary:
                     weight_instruction = "Setze alle Gewichte auf 0 kg, da keine Trainingshistorie vorhanden ist."
                 else:
-                    weight_instruction = "Basiere die Gewichte auf der Trainingshistorie."
+                    weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
                 
-                prompt = f"""
-                Erstelle einen Trainingsplan für folgende Person:
-                
-                Profil: {profile}
-                Trainingshistorie: {history_summary}
-                Zusätzliche Wünsche: {additional_info}
-                
-                Erstelle GENAU {training_days} Trainingstage pro Woche.
-                Split-Typ: {split_type}
-                Fokus: {focus}
-                
-                WICHTIGE FORMATIERUNG:
-                1. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
-                2. Verwende aussagekräftige Namen wie:
-                   - **Oberkörper Push:**
-                   - **Unterkörper Pull:**
-                   - **Ganzkörper A:**
-                   - **Brust & Trizeps:**
-                   NICHT nur "Workout-Name"!
-                3. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
-                4. {weight_instruction}
-                5. Keine zusätzlichen Erklärungen oder Texte am Ende
-                
-                Beispiel-Format:
-                **Oberkörper Push:**
-                - Bankdrücken: 3 Sätze, 8-10 Wdh, 60 kg (Fokus: Brustmuskulatur)
-                - Schulterdrücken: 3 Sätze, 10-12 Wdh, 30 kg (Fokus: Vordere Schulter)
-                
-                Erstelle nur die Workouts mit den Übungen, sonst nichts.
-                """
+                prompt = ai_config['prompt'].format(
+                    profile=profile,
+                    history_analysis=history_summary,
+                    additional_info=additional_info,
+                    training_days=training_days,
+                    split_type=split_type,
+                    focus=focus,
+                    weight_instruction=weight_instruction
+                )
                 
                 try:
                     response = client.chat.completions.create(
-                        model='gpt-4o-mini',
+                        model=ai_config['model'],
                         messages=[{"role": "user", "content": prompt}],
-                        temperature=0.7,
-                        max_tokens=2000
+                        temperature=ai_config['temperature'],
+                        max_tokens=ai_config['max_tokens'],
+                        top_p=ai_config['top_p']
                     )
                     
                     plan_text = response.choices[0].message.content
@@ -1101,19 +1218,12 @@ with tab4:
         st.info("Erledigte Workouts werden normalerweise automatisch um 23:59 Uhr archiviert.")
         
         if st.button("📦 Manuell archivieren", type="primary"):
-            # Debug direkt hier
-            df_test = load_user_workouts(st.session_state.userid)
-            st.write(f"DEBUG Button: Workouts geladen: {len(df_test) if df_test is not None else 'NONE'}")
-            st.write(f"DEBUG Button: Columns: {df_test.columns.tolist() if df_test is not None and not df_test.empty else 'NO COLUMNS'}")
-    
-        # Dann erst die Funktion
-        success, message = archive_completed_workouts(st.session_state.userid)
-        if success:
-            st.success(message)
-            st.rerun()
-        else:
-            st.warning(message)
-
+            success, message = archive_completed_workouts(st.session_state.userid)
+            if success:
+                st.success(message)
+                st.rerun()
+            else:
+                st.warning(message)
     
     with col2:
         st.markdown("### Daten-Export")

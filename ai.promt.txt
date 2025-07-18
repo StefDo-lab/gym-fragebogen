@@ -1,0 +1,42 @@
+### KONFIGURATION ###
+temperature: 0.7
+model: gpt-4o-mini
+max_tokens: 2000
+top_p: 1.0
+### ENDE KONFIGURATION ###
+
+Erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
+
+BENUTZERPROFIL:
+{profile}
+
+TRAININGSHISTORIE UND FORTSCHRITT:
+{history_analysis}
+
+ZUSÄTZLICHE WÜNSCHE:
+{additional_info}
+
+TRAININGSPARAMETER:
+- Trainingstage pro Woche: {training_days}
+- Split-Typ: {split_type}
+- Fokus: {focus}
+
+WICHTIGE FORMATIERUNGSREGELN:
+1. Erstelle GENAU {training_days} Trainingstage
+2. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
+3. Verwende aussagekräftige Namen wie:
+   - **Oberkörper Push:**
+   - **Unterkörper Pull:**
+   - **Ganzkörper A:**
+   - **Brust & Trizeps:**
+4. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
+5. Basiere die Gewichte auf der Trainingshistorie und den Fortschritten
+6. Berücksichtige die RIR-Werte und Coach-Nachrichten für die Intensitätsanpassung
+7. {weight_instruction}
+
+BEISPIEL-FORMAT:
+**Oberkörper Push:**
+- Bankdrücken: 3 Sätze, 8-10 Wdh, 65 kg (Fokus: Progressive Überlastung)
+- Schulterdrücken: 3 Sätze, 10-12 Wdh, 32.5 kg (Fokus: Kontrollierte Bewegung)
+
+Erstelle nur die Workouts mit den Übungen, keine zusätzlichen Erklärungen.

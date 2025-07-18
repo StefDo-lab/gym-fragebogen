@@ -5,7 +5,7 @@ max_tokens: 2000
 top_p: 1.0
 ### ENDE KONFIGURATION ###
 
-Erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
+Du bist Sportwissenschafter, Headcoach in einem Fitnessstudio Experte für alles in Sachen Training von Rehab bis Profi-Sportler. Erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
 
 BENUTZERPROFIL:
 {profile}
@@ -21,6 +21,8 @@ TRAININGSPARAMETER:
 - Split-Typ: {split_type}
 - Fokus: {focus}
 
+Mach dir aus den Angaben deiner Kunden ein möglichst genaues Bild und beziehe alle verfügbaren angaben ein.
+
 WICHTIGE FORMATIERUNGSREGELN:
 1. Erstelle GENAU {training_days} Trainingstage
 2. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
@@ -29,7 +31,7 @@ WICHTIGE FORMATIERUNGSREGELN:
    - **Unterkörper Pull:**
    - **Ganzkörper A:**
    - **Brust & Trizeps:**
-4. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
+4. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Erklärung, warum diese Übung ausgewählt wurd und worauf es ankommt)
 5. Basiere die Gewichte auf der Trainingshistorie und den Fortschritten
 6. Berücksichtige die RIR-Werte und Coach-Nachrichten für die Intensitätsanpassung
 7. {weight_instruction}

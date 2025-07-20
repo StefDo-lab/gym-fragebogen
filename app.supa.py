@@ -117,6 +117,15 @@ def inject_mobile_styles():
         .success-animation {
             animation: success-pulse 0.5s ease;
         }
+        
+        /* Success Box Styling */
+        .success-box {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 10px 0;
+        }
     </style>
     
     <script>
@@ -201,7 +210,7 @@ def get_ai_prompt_template():
     config = {
         'temperature': 0.7,
         'model': 'gpt-4o-mini',
-        'max_tokens': 2000,
+        'max_tokens': 4000,
         'top_p': 1.0,
         'prompt': ''
     }
@@ -238,7 +247,14 @@ def get_ai_prompt_template():
     except FileNotFoundError:
         st.error("ai_prompt.txt nicht gefunden! Verwende eingebautes Template.")
         config['prompt'] = """
-Erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
+Du bist Sportwissenschafter, Headcoach in einem Fitnessstudio und Experte für alles in Sachen Training von Rehab bis Profi-Sportler. 
+
+WICHTIG: Beginne deine Antwort mit einer kurzen Erklärung (2-3 Sätze) warum du diesen spezifischen Plan erstellt hast. Erkläre die Logik hinter der Übungsauswahl und wie sie zu den Zielen des Users passt. Verwende das Format:
+
+**DEIN PERSÖNLICHER TRAININGSPLAN**
+[Kurze Erklärung warum dieser Plan optimal ist]
+
+Dann erstelle einen personalisierten Trainingsplan basierend auf folgenden Daten:
 
 BENUTZERPROFIL:
 {profile}
@@ -262,17 +278,18 @@ WICHTIGE FORMATIERUNGSREGELN:
    - **Unterkörper Pull:**
    - **Ganzkörper A:**
    - **Brust & Trizeps:**
-4. Format pro Übung: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurze Erklärung)
-5. Basiere die Gewichte auf der Trainingshistorie und den Fortschritten
-6. Berücksichtige die RIR-Werte und Coach-Nachrichten für die Intensitätsanpassung
-7. {weight_instruction}
+4. Format pro Übung EXAKT so: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurzer Hinweis)
+5. Halte die Fokus-Hinweise KURZ (max. 5-8 Wörter)
+6. Basiere die Gewichte auf der Trainingshistorie und den Fortschritten
+7. Berücksichtige die RIR-Werte und Coach-Nachrichten für die Intensitätsanpassung
+8. {weight_instruction}
 
-BEISPIEL-FORMAT:
+BEISPIEL-FORMAT (GENAU SO FORMATIEREN):
 **Oberkörper Push:**
 - Bankdrücken: 3 Sätze, 8-10 Wdh, 65 kg (Fokus: Progressive Überlastung)
 - Schulterdrücken: 3 Sätze, 10-12 Wdh, 32.5 kg (Fokus: Kontrollierte Bewegung)
 
-Erstelle nur die Workouts mit den Übungen, keine zusätzlichen Erklärungen.
+Erstelle nur die Workouts mit den Übungen, keine zusätzlichen Erklärungen am Ende.
 """
     
     return config
@@ -305,6 +322,70 @@ def delete_supabase_data(table, row_id):
 def get_user_profile(user_uuid):
     data = get_supabase_data(TABLE_QUESTIONNAIRE, f"uuid=eq.{user_uuid}")
     return data[0] if data else {}
+
+def get_comprehensive_user_profile(user_uuid):
+    """Holt alle relevanten Gesundheits- und Trainingsdaten aus dem Fragebogen"""
+    profile = get_user_profile(user_uuid)
+    
+    if not profile:
+        return {}
+    
+    # Extrahiere alle relevanten Felder für die KI
+    comprehensive_profile = {
+        # Persönliche Daten
+        "name": f"{profile.get('forename', '')} {profile.get('surename', '')}".strip(),
+        "alter": calculate_age(profile.get('birthday')) if profile.get('birthday') else None,
+        "geschlecht": profile.get('gender', 'nicht angegeben'),
+        "größe": profile.get('height', 'nicht angegeben'),
+        "gewicht": profile.get('weight', 'nicht angegeben'),
+        "körperfett": profile.get('bodyfat', 'nicht angegeben'),
+        
+        # Trainingserfahrung und Ziele
+        "erfahrung": profile.get('experience', 'nicht angegeben'),
+        "ziele": profile.get('goals', 'nicht angegeben'),
+        "ziel_details": profile.get('goalDetail', ''),
+        "trainingsfrequenz": profile.get('trainFrequency', 'nicht angegeben'),
+        "motivation": profile.get('motivation', 'nicht angegeben'),
+        
+        # Gesundheitszustand
+        "gesundheitszustand": profile.get('healthCondition', 'gut'),
+        "einschränkungen": profile.get('restrictions', 'keine'),
+        "schmerzen": profile.get('pains', 'keine'),
+        
+        # Spezifische Gesundheitsprobleme
+        "operationen": profile.get('surgery', 'nein'),
+        "operations_details": profile.get('surgeryDetails', '') if profile.get('surgery') == 'ja' else '',
+        "ausstrahlende_schmerzen": profile.get('radiatingPain', 'nein'),
+        "schmerz_details": profile.get('painDetails', '') if profile.get('radiatingPain') == 'ja' else '',
+        "bandscheibenvorfall": profile.get('discHerniated', 'nein'),
+        "bandscheiben_details": profile.get('discDetails', '') if profile.get('discHerniated') == 'ja' else '',
+        "osteoporose": profile.get('osteoporose', 'nein'),
+        "bluthochdruck": profile.get('hypertension', 'nein'),
+        "hernie": profile.get('hernia', 'nein'),
+        "herzprobleme": profile.get('cardic', 'nein'),
+        "schlaganfall": profile.get('stroke', 'nein'),
+        "andere_gesundheitsprobleme": profile.get('healthOther', ''),
+        
+        # Lifestyle
+        "stresslevel": profile.get('stresslevel', 'mittel'),
+        "schlafdauer": profile.get('sleepDuration', 'nicht angegeben'),
+        "ernährung": profile.get('diet', 'nicht angegeben'),
+    }
+    
+    # Entferne leere Werte für kompaktere Darstellung
+    return {k: v for k, v in comprehensive_profile.items() if v and v != 'nicht angegeben' and v != 'nein' and v != ''}
+
+def calculate_age(birthday_str):
+    """Berechnet das Alter aus dem Geburtstag"""
+    if not birthday_str:
+        return None
+    try:
+        birthday = datetime.datetime.strptime(str(birthday_str), "%Y-%m-%d").date()
+        today = datetime.date.today()
+        age = today.year - birthday.year - ((today.month, today.day) < (birthday.month, birthday.day))
+        return age
+    except:
+        return None
 
 def load_user_workouts(user_uuid):
     data = get_supabase_data(TABLE_WORKOUT, f"uuid=eq.{user_uuid}")
@@ -426,18 +507,30 @@ def analyze_workout_history(user_uuid):
 def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = None  # Startet mit None statt "Allgemeines Training"
+    current_workout = None
+    plan_explanation = ""  # Speichere die Erklärung
     lines = plan_text.split('\n')
+    
+    # Extrahiere die Plan-Erklärung wenn vorhanden
+    if "**DEIN PERSÖNLICHER TRAININGSPLAN**" in plan_text:
+        explanation_start = plan_text.find("**DEIN PERSÖNLICHER TRAININGSPLAN**")
+        explanation_end = plan_text.find("**", explanation_start + len("**DEIN PERSÖNLICHER TRAININGSPLAN**"))
+        if explanation_end > explanation_start:
+            plan_explanation = plan_text[explanation_start:explanation_end].replace("**DEIN PERSÖNLICHER TRAININGSPLAN**", "").strip()
     
     for line in lines:
         line = line.strip()
         if not line:
             continue
             
+        # Skip die Erklärung
+        if "DEIN PERSÖNLICHER TRAININGSPLAN" in line or line == plan_explanation:
+            continue
+            
         # Verbesserte Erkennung von Workout-Namen
-        # Suche nach **Text:** oder ähnlichen Mustern
         workout_patterns = [
             r'^\*\*(.+?):\*\*',  # **Workout Name:**
+            r'^\*\*(.+)\*\*',    # **Workout Name** (ohne Doppelpunkt)
             r'^##\s*(.+)',       # ## Workout Name
             r'^###\s*(.+)',      # ### Workout Name
             r'^(.+):$'           # Workout Name:
@@ -466,7 +559,7 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
             try:
                 sets, weight, reps, explanation = 3, 0.0, "10", ""
                 
-                explanation_match = re.search(r'\((?:Erklärung|Fokus):\s*(.+?)\)', details)
+                explanation_match = re.search(r'\((?:Erklärung|Fokus):\s*(.+)\)$', details)
                 if explanation_match:
                     explanation = explanation_match.group(1).strip()
                     details = details.replace(explanation_match.group(0), '').strip()
@@ -490,7 +583,7 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
                         'uuid': user_uuid, 
                         'date': current_date, 
                         'name': user_name,
-                        'workout': current_workout,  # Verwendet den erkannten Workout-Namen
+                        'workout': current_workout,
                         'exercise': exercise_name,
                         'set': satz, 
                         'weight': weight,
@@ -512,7 +605,7 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
             
             continue
     
-    return rows
+    return rows, plan_explanation
 
 def add_set_to_exercise(user_uuid, exercise_data, new_set_number):
     """Fügt einen neuen Satz zu einer Übung hinzu"""
@@ -1048,16 +1141,47 @@ with tab2:
     if not client:
         st.error("OpenAI API Key ist nicht konfiguriert.")
     else:
-        # Lade Profil und History
-        profile = get_user_profile(st.session_state.userid)
+        # Lade vollständiges Profil und History
+        comprehensive_profile = get_comprehensive_user_profile(st.session_state.userid)
         history_summary, _ = analyze_workout_history(st.session_state.userid)
         
         with st.expander("Deine Daten für die KI", expanded=True):
-            if profile:
-                st.info("Dein Profil wurde gefunden:")
-                relevant_keys = ["name", "gender", "height", "weight", "experience", "goals", "health_issues"]
-                profile_display = {k: v for k, v in profile.items() if k in relevant_keys and v}
-                st.json(profile_display)
+            if comprehensive_profile:
+                st.info("Dein vollständiges Profil:")
+                
+                # Zeige Daten in übersichtlichen Kategorien
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("**👤 Persönliche Daten:**")
+                    for key in ["name", "alter", "geschlecht", "größe", "gewicht", "körperfett"]:
+                        if key in comprehensive_profile:
+                            st.write(f"• {key.capitalize()}: {comprehensive_profile[key]}")
+                    
+                    st.markdown("**🏋️ Training:**")
+                    for key in ["erfahrung", "ziele", "trainingsfrequenz", "motivation"]:
+                        if key in comprehensive_profile:
+                            st.write(f"• {key.replace('_', ' ').capitalize()}: {comprehensive_profile[key]}")
+                
+                with col2:
+                    st.markdown("**🏥 Gesundheit:**")
+                    health_keys = ["gesundheitszustand", "einschränkungen", "schmerzen", 
+                                  "operationen", "bandscheibenvorfall", "bluthochdruck"]
+                    has_health_issues = False
+                    for key in health_keys:
+                        if key in comprehensive_profile:
+                            value = comprehensive_profile[key]
+                            if value and value not in ["gut", "keine", "nein"]:
+                                st.write(f"• {key.replace('_', ' ').capitalize()}: {value}")
+                                has_health_issues = True
+                    
+                    if not has_health_issues:
+                        st.write("• Keine bekannten Einschränkungen")
+                    
+                    st.markdown("**😴 Lifestyle:**")
+                    for key in ["stresslevel", "schlafdauer", "ernährung"]:
+                        if key in comprehensive_profile:
+                            st.write(f"• {key.replace('_', ' ').capitalize()}: {comprehensive_profile[key]}")
             
             st.text_area("Trainingshistorie & Fortschritt:", value=history_summary, height=200, disabled=True)
         
@@ -1086,7 +1210,7 @@ with tab2:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
                 
                 prompt = ai_config['prompt'].format(
-                    profile=profile,
+                    profile=comprehensive_profile,
                     history_analysis=history_summary,
                     additional_info=additional_info,
                     training_days=training_days,
@@ -1106,26 +1230,59 @@ with tab2:
                     
                     plan_text = response.choices[0].message.content
                     st.session_state['ai_plan'] = plan_text
-                    st.session_state['ai_plan_rows'] = parse_ai_plan_to_rows(
+                    parsed_rows, plan_explanation = parse_ai_plan_to_rows(
                         plan_text,
                         st.session_state.userid,
-                        profile.get('name', 'Unbekannt')
+                        comprehensive_profile.get('name', 'Unbekannt')
                     )
+                    st.session_state['ai_plan_rows'] = parsed_rows
+                    st.session_state['ai_plan_explanation'] = plan_explanation
                     
                 except Exception as e:
                     st.error(f"Fehler bei der KI-Generierung: {e}")
         
         # Zeige generierten Plan
         if 'ai_plan' in st.session_state and st.session_state['ai_plan']:
-            st.markdown("### Generierter Plan")
-            st.text_area("KI-Plan:", value=st.session_state['ai_plan'], height=400, disabled=True)
+            # Erfolgsbox mit Animation
+            st.markdown("""
+            <div class="success-box success-animation">
+                <h3>✅ Dein personalisierter Trainingsplan wurde erfolgreich erstellt!</h3>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Zeige Plan-Erklärung wenn vorhanden
+            if st.session_state.get('ai_plan_explanation'):
+                with st.expander("💡 Warum dieser Plan für dich optimal ist", expanded=True):
+                    st.write(st.session_state['ai_plan_explanation'])
+            
+            # Zeige eine Vorschau der Workouts
+            if st.session_state.get('ai_plan_rows'):
+                workouts = {}
+                total_exercises = 0
+                for row in st.session_state['ai_plan_rows']:
+                    workout_name = row['workout']
+                    if workout_name not in workouts:
+                        workouts[workout_name] = set()
+                    if row['set'] == 1:  # Zähle nur ersten Satz für unique exercises
+                        workouts[workout_name].add(row['exercise'])
+                        total_exercises += 1
+                
+                st.markdown("### 📋 Dein neuer Plan enthält:")
+                cols = st.columns(len(workouts))
+                for i, (workout, exercises) in enumerate(workouts.items()):
+                    with cols[i]:
+                        st.metric(workout, f"{len(exercises)} Übungen")
+                
+                st.info(f"💪 Insgesamt {total_exercises} verschiedene Übungen mit {len(st.session_state['ai_plan_rows'])} Sätzen")
+            
+            # Vollständiger Plan in Expander
+            with st.expander("📄 Vollständiger Plan anzeigen", expanded=False):
+                st.text_area("", value=st.session_state['ai_plan'], height=400, disabled=True)
             
             if st.session_state.get('ai_plan_rows'):
-                st.info(f"Der Plan enthält {len(st.session_state['ai_plan_rows'])} Sätze")
-                
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("✅ Plan aktivieren", type="primary"):
+                    if st.button("✅ Plan aktivieren", type="primary", use_container_width=True):
                         # Lösche aktuelle Workouts
                         df = load_user_workouts(st.session_state.userid)
                         if not df.empty:
@@ -1140,18 +1297,21 @@ with tab2:
                                 break
                         
                         if success:
-                            st.success("Neuer Plan wurde aktiviert!")
+                            st.success("🎉 Neuer Plan wurde aktiviert! Wechsle zum Training-Tab um zu starten.")
                             st.balloons()
                             del st.session_state['ai_plan']
                             del st.session_state['ai_plan_rows']
+                            del st.session_state['ai_plan_explanation']
                             st.rerun()
                         else:
                             st.error("Fehler beim Aktivieren des Plans")
                 
                 with col2:
-                    if st.button("❌ Plan verwerfen"):
+                    if st.button("❌ Plan verwerfen", use_container_width=True):
                         del st.session_state['ai_plan']
                         del st.session_state['ai_plan_rows']
+                        if 'ai_plan_explanation' in st.session_state:
+                            del st.session_state['ai_plan_explanation']
                         st.rerun()
 
 with tab3:

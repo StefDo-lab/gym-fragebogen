@@ -758,6 +758,8 @@ def export_to_csv(df):
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
     st.session_state['user_email'] = None
+if 'plan_activated_success' not in st.session_state:
+    st.session_state.plan_activated_success = False
 
 if not st.session_state.userid:
     st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
@@ -1215,76 +1217,89 @@ with tab2:
         
         # Zeige generierten Plan
         if 'ai_plan' in st.session_state and st.session_state['ai_plan']:
-            # Erfolgsbox mit Animation
-            st.markdown("""
-            <div class="success-box success-animation">
-                <h3>✅ Dein personalisierter Trainingsplan wurde erfolgreich erstellt!</h3>
-            </div>
-            """, unsafe_allow_html=True)
             
-            # Zeige Plan-Erklärung wenn vorhanden
-            if st.session_state.get('ai_plan_explanation'):
-                with st.expander("💡 Warum dieser Plan für dich optimal ist", expanded=True):
-                    st.write(st.session_state['ai_plan_explanation'])
-            
-            # Zeige eine Vorschau der Workouts
-            if st.session_state.get('ai_plan_rows'):
-                workouts = {}
-                total_exercises = 0
-                for row in st.session_state['ai_plan_rows']:
-                    workout_name = row['workout']
-                    if workout_name not in workouts:
-                        workouts[workout_name] = set()
-                    if row['set'] == 1:  # Zähle nur ersten Satz für unique exercises
-                        workouts[workout_name].add(row['exercise'])
-                        total_exercises += 1
+            # --- START DER KORRIGIERTEN LOGIK ---
+            if st.session_state.get('plan_activated_success', False):
+                st.success("Dein neuer Plan ist jetzt aktiv.")
+                if st.button("Weiter zum Training", type="primary", use_container_width=True):
+                    # Bereinige Session State und lade die App neu
+                    del st.session_state['ai_plan']
+                    del st.session_state['ai_plan_rows']
+                    if 'ai_plan_explanation' in st.session_state:
+                        del st.session_state['ai_plan_explanation']
+                    st.session_state.plan_activated_success = False # Für den nächsten Durchlauf zurücksetzen
+                    st.rerun()
+            else:
+                # Erfolgsbox mit Animation
+                st.markdown("""
+                <div class="success-box success-animation">
+                    <h3>✅ Dein personalisierter Trainingsplan wurde erfolgreich erstellt!</h3>
+                </div>
+                """, unsafe_allow_html=True)
                 
-                st.markdown("### 📋 Dein neuer Plan enthält:")
-                cols = st.columns(len(workouts))
-                for i, (workout, exercises) in enumerate(workouts.items()):
-                    with cols[i]:
-                        st.metric(workout, f"{len(exercises)} Übungen")
+                # Zeige Plan-Erklärung wenn vorhanden
+                if st.session_state.get('ai_plan_explanation'):
+                    with st.expander("💡 Warum dieser Plan für dich optimal ist", expanded=True):
+                        st.write(st.session_state['ai_plan_explanation'])
                 
-                st.info(f"💪 Insgesamt {total_exercises} verschiedene Übungen mit {len(st.session_state['ai_plan_rows'])} Sätzen")
-            
-            # Vollständiger Plan in Expander
-            with st.expander("📄 Vollständiger Plan anzeigen", expanded=False):
-                st.text_area("", value=st.session_state['ai_plan'], height=400, disabled=True)
-            
-            if st.session_state.get('ai_plan_rows'):
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Plan aktivieren", type="primary", use_container_width=True, key="activate_plan"):
-                        # Lösche aktuelle Workouts
-                        df = load_user_workouts(st.session_state.userid)
-                        if not df.empty:
-                            for _, row in df.iterrows():
-                                delete_supabase_data(TABLE_WORKOUT, row['id'])
-                        
-                        # Füge neue Workouts hinzu
-                        success = True
-                        for row_data in st.session_state['ai_plan_rows']:
-                            if not insert_supabase_data(TABLE_WORKOUT, row_data):
-                                success = False
-                                break
-                        
-                        if success:
-                            st.success("🎉 Neuer Plan wurde aktiviert! Wechsle zum Training-Tab um zu starten.")
-                            st.balloons()
+                # Zeige eine Vorschau der Workouts
+                if st.session_state.get('ai_plan_rows'):
+                    workouts = {}
+                    total_exercises = 0
+                    for row in st.session_state['ai_plan_rows']:
+                        workout_name = row['workout']
+                        if workout_name not in workouts:
+                            workouts[workout_name] = set()
+                        if row['set'] == 1:  # Zähle nur ersten Satz für unique exercises
+                            workouts[workout_name].add(row['exercise'])
+                            total_exercises += 1
+                    
+                    st.markdown("### 📋 Dein neuer Plan enthält:")
+                    cols = st.columns(len(workouts))
+                    for i, (workout, exercises) in enumerate(workouts.items()):
+                        with cols[i]:
+                            st.metric(workout, f"{len(exercises)} Übungen")
+                    
+                    st.info(f"💪 Insgesamt {total_exercises} verschiedene Übungen mit {len(st.session_state['ai_plan_rows'])} Sätzen")
+                
+                # Vollständiger Plan in Expander
+                with st.expander("📄 Vollständiger Plan anzeigen", expanded=False):
+                    st.text_area("", value=st.session_state['ai_plan'], height=400, disabled=True)
+                
+                if st.session_state.get('ai_plan_rows'):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Plan aktivieren", type="primary", use_container_width=True, key="activate_plan"):
+                            # Lösche aktuelle Workouts
+                            df = load_user_workouts(st.session_state.userid)
+                            if not df.empty:
+                                for _, row in df.iterrows():
+                                    delete_supabase_data(TABLE_WORKOUT, row['id'])
+                            
+                            # Füge neue Workouts hinzu
+                            success = True
+                            for row_data in st.session_state['ai_plan_rows']:
+                                if not insert_supabase_data(TABLE_WORKOUT, row_data):
+                                    success = False
+                                    break
+                            
+                            if success:
+                                # Setze Erfolgs-Flag und lade neu, um die Erfolgsmeldung anzuzeigen
+                                st.session_state.plan_activated_success = True
+                                st.rerun()
+                            else:
+                                st.error("Fehler beim Aktivieren des Plans")
+                    
+                    with col2:
+                        if st.button("Plan verwerfen", use_container_width=True, key="discard_plan"):
+                            # Bereinige Session State und lade neu
                             del st.session_state['ai_plan']
                             del st.session_state['ai_plan_rows']
-                            del st.session_state['ai_plan_explanation']
+                            if 'ai_plan_explanation' in st.session_state:
+                                del st.session_state['ai_plan_explanation']
+                            st.session_state.plan_activated_success = False
                             st.rerun()
-                        else:
-                            st.error("Fehler beim Aktivieren des Plans")
-                
-                with col2:
-                    if st.button("Plan verwerfen", use_container_width=True, key="discard_plan"):
-                        del st.session_state['ai_plan']
-                        del st.session_state['ai_plan_rows']
-                        if 'ai_plan_explanation' in st.session_state:
-                            del st.session_state['ai_plan_explanation']
-                        st.rerun()
+            # --- ENDE DER KORRIGIERTEN LOGIK ---
 
 with tab3:
     st.subheader("Deine Trainingsanalyse")

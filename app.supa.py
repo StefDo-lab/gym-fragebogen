@@ -8,14 +8,11 @@ import io
 import json
 from supabase import create_client, Client
 
-# ---- Configuration ----
-# Sicherer Code, der eine Fehlermeldung anzeigt statt abzustürzen
-SUPABASE_URL = st.secrets.get("supabase_url")
-SUPABASE_KEY = st.secrets.get("supabase_service_role_key")
+st.info("Kontrollpunkt 1: Skript gestartet, Imports erfolgreich.")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("WICHTIG: Supabase URL oder Key konnten nicht geladen werden. Bitte prüfe die Secrets in den App-Einstellungen!")
-    st.stop()
+# ---- Configuration ----
+SUPABASE_URL = st.secrets["supabase_url"]
+SUPABASE_KEY = st.secrets["supabase_service_role_key"]
 TABLE_WORKOUT = "workouts"
 TABLE_ARCHIVE = "workout_history"
 TABLE_QUESTIONNAIRE = "questionaire"
@@ -459,20 +456,20 @@ def analyze_workout_history(user_uuid):
         training_count = len(ex_data.groupby('date'))
         
         analysis_parts.append(f"\n{exercise}:")
-        analysis_parts.append(f"  - Trainiert: {training_count}x")
-        analysis_parts.append(f"  - Aktuelles Gewicht: {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
-        analysis_parts.append(f"  - Fortschritt: {weight_progress:+.1f} kg seit Beginn")
-        analysis_parts.append(f"  - Durchschnitt: {avg_weight:.1f} kg × {avg_reps:.0f} Wdh")
+        analysis_parts.append(f"   - Trainiert: {training_count}x")
+        analysis_parts.append(f"   - Aktuelles Gewicht: {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
+        analysis_parts.append(f"   - Fortschritt: {weight_progress:+.1f} kg seit Beginn")
+        analysis_parts.append(f"   - Durchschnitt: {avg_weight:.1f} kg × {avg_reps:.0f} Wdh")
         if avg_rir > 0:
-            analysis_parts.append(f"  - Durchschnittliche RIR: {avg_rir:.1f}")
+            analysis_parts.append(f"   - Durchschnittliche RIR: {avg_rir:.1f}")
         
         # Coach-Nachrichten für diese Übung
         messages = ex_data[ex_data['messageToCoach'].notna() & (ex_data['messageToCoach'] != '')]
         if not messages.empty:
-            analysis_parts.append(f"  - Feedback vom Athleten:")
+            analysis_parts.append(f"   - Feedback vom Athleten:")
             for _, msg_row in messages.iterrows():
                 date_str = msg_row['date'].strftime('%d.%m.')
-                analysis_parts.append(f"    • {date_str}: \"{msg_row['messageToCoach']}\"")
+                analysis_parts.append(f"     • {date_str}: \"{msg_row['messageToCoach']}\"")
     
     # 3. Workout-Split Analyse
     analysis_parts.append("\nWORKOUT-VERTEILUNG:")
@@ -491,7 +488,7 @@ def analyze_workout_history(user_uuid):
         if len(rir_by_exercise) > 0:
             analysis_parts.append("- Höchste Intensität (niedrigste RIR):")
             for ex, rir in rir_by_exercise.head(3).items():
-                analysis_parts.append(f"  • {ex}: RIR {rir:.1f}")
+                analysis_parts.append(f"   • {ex}: RIR {rir:.1f}")
     
     # 5. Allgemeine Coach-Nachrichten (nicht übungsspezifisch)
     all_messages = df[df['messageToCoach'].notna() & (df['messageToCoach'] != '')]['messageToCoach'].unique()
@@ -531,9 +528,9 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
         workout_patterns = [
             r'^\*\*(.+?):\*\*',  # **Workout Name:**
             r'^\*\*(.+)\*\*',    # **Workout Name** (ohne Doppelpunkt)
-            r'^##\s*(.+)',       # ## Workout Name
-            r'^###\s*(.+)',      # ### Workout Name
-            r'^(.+):$'           # Workout Name:
+            r'^##\s*(.+)',      # ## Workout Name
+            r'^###\s*(.+)',     # ### Workout Name
+            r'^(.+):$'          # Workout Name:
         ]
         
         workout_found = False
@@ -783,11 +780,13 @@ def export_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ---- Login/Auth Section ----
+st.info(f"Kontrollpunkt 2: Prüfe Login-Status. User-ID ist: {st.session_state.get('userid')}")
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
     st.session_state['user_email'] = None
 
 if not st.session_state.userid:
+    st.info("Kontrollpunkt 3: User ist NICHT eingeloggt. Zeige Login-Formular.")
     st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
     
     # Nur Login, keine Registrierung (da diese im Fragebogen erfolgt)
@@ -830,7 +829,7 @@ if not st.session_state.userid:
                         else:
                             st.error("Anmeldung fehlgeschlagen")
 
-                            
+                        
                     except Exception as e:
                         if "Invalid login credentials" in str(e):
                             st.error("Ungültige Email oder Passwort")
@@ -859,6 +858,7 @@ if not st.session_state.userid:
     st.stop()
 
 # ---- Nach erfolgreichem Login ----
+st.info("Kontrollpunkt 4: User ist eingeloggt. Baue Hauptseite auf.")
 # Einfacher Titel ohne Header-Buttons
 st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout Tracker</h1>", unsafe_allow_html=True)
 
@@ -880,6 +880,7 @@ tab_names = ["Training", "KI-Plan", "Stats", "Mehr"]
 tab1, tab2, tab3, tab4 = st.tabs(tab_names)
 
 with tab1:
+    st.info("Kontrollpunkt 5: Tab 1 'Training' wird geladen.")
     st.subheader("Deine Workouts")
     df = load_user_workouts(st.session_state.userid)
     
@@ -1163,7 +1164,7 @@ with tab2:
                 with col2:
                     st.markdown("**🏥 Gesundheit:**")
                     health_keys = ["gesundheitszustand", "einschränkungen", "schmerzen", 
-                                  "operationen", "bandscheibenvorfall", "bluthochdruck"]
+                                   "operationen", "bandscheibenvorfall", "bluthochdruck"]
                     has_health_issues = False
                     for key in health_keys:
                         if key in comprehensive_profile:

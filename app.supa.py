@@ -126,6 +126,25 @@ def inject_mobile_styles():
             padding: 20px;
             margin: 10px 0;
         }
+        
+        /* Verhindere Streamlit's Fade-Effect */
+        .stApp > div:first-child {
+            opacity: 1 !important;
+            transition: opacity 0.1s !important;
+        }
+        
+        /* Verhindere das Ausgrauen von Inputs während Updates */
+        .stTextInput > div > div > input:disabled,
+        .stNumberInput > div > div > input:disabled {
+            opacity: 1 !important;
+            background-color: white !important;
+        }
+        
+        /* Smooth Updates ohne Flackern */
+        * {
+            -webkit-backface-visibility: hidden;
+            -webkit-transform: translateZ(0);
+        }
     </style>
     
     <script>
@@ -168,33 +187,9 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
-# ---- Installation Prompt ----
-def show_install_prompt():
-    if 'install_prompted' not in st.session_state:
-        st.session_state.install_prompted = False
-    
-    if not st.session_state.install_prompted:
-        with st.container():
-            st.info("📱 **App installieren für bessere Erfahrung!**")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Installieren", type="primary"):
-                    st.markdown("""
-                    <script>
-                    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-                        alert('iOS: Tippe auf das Teilen-Symbol (□↑) und dann "Zum Home-Bildschirm"');
-                    } else if (/Android/.test(navigator.userAgent)) {
-                        alert('Android: Tippe auf die drei Punkte (⋮) und dann "App installieren"');
-                    } else {
-                        alert('Desktop: Nutze Chrome und klicke auf das Install-Symbol in der Adressleiste');
-                    }
-                    </script>
-                    """, unsafe_allow_html=True)
-                    st.session_state.install_prompted = True
-            with col2:
-                if st.button("Später"):
-                    st.session_state.install_prompted = True
-                    st.rerun()
+# Session-Keeper für längere Sessions
+if 'last_activity' not in st.session_state:
+    st.session_state.last_activity = datetime.datetime.now()
 
 # ---- OpenAI Setup ----
 try:
@@ -788,9 +783,6 @@ if 'userid' not in st.session_state:
     st.session_state['user_email'] = None
 
 if not st.session_state.userid:
-    # Zeige Install-Prompt beim ersten Besuch
-    show_install_prompt()
-    
     st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
     
     # Nur Login, keine Registrierung (da diese im Fragebogen erfolgt)
@@ -879,7 +871,7 @@ if st.sidebar.button("🚪 Abmelden"):
     st.rerun()
 
 # Mobile-optimierte Tabs
-tab_names = ["🏋️ Training", "🤖 KI-Plan", "📊 Stats", "⚙️ Mehr"]
+tab_names = ["Training", "KI-Plan", "Stats", "Mehr"]
 tab1, tab2, tab3, tab4 = st.tabs(tab_names)
 
 with tab1:
@@ -909,7 +901,7 @@ with tab1:
         
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
-            with st.expander(f"🏋️ {workout_name}", expanded=True):
+            with st.expander(f"{workout_name}", expanded=False):
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -1136,7 +1128,7 @@ with tab1:
                     st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
-    st.subheader("🤖 Neuen Trainingsplan mit KI erstellen")
+    st.subheader("Neuen Trainingsplan mit KI erstellen")
     
     if not client:
         st.error("OpenAI API Key ist nicht konfiguriert.")
@@ -1145,7 +1137,7 @@ with tab2:
         comprehensive_profile = get_comprehensive_user_profile(st.session_state.userid)
         history_summary, _ = analyze_workout_history(st.session_state.userid)
         
-        with st.expander("Deine Daten für die KI", expanded=True):
+        with st.expander("Deine Daten für die KI", expanded=False):
             if comprehensive_profile:
                 st.info("Dein vollständiges Profil:")
                 
@@ -1198,7 +1190,7 @@ with tab2:
         with col3:
             focus = st.selectbox("Fokus", ["Ausgewogen", "Kraft", "Hypertrophie", "Kraftausdauer"])
         
-        if st.button("🤖 Plan generieren", type="primary"):
+        if st.button("Plan generieren", type="primary"):
             with st.spinner("KI erstellt deinen personalisierten Plan..."):
                 # Lade Prompt und Config
                 ai_config = get_ai_prompt_template()
@@ -1208,6 +1200,10 @@ with tab2:
                     weight_instruction = "Setze alle Gewichte auf 0 kg, da keine Trainingshistorie vorhanden ist."
                 else:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
+                
+                # Stelle sicher dass additional_info nicht leer ist
+                if not additional_info or additional_info.strip() == "":
+                    additional_info = "Keine zusätzlichen Wünsche angegeben."
                 
                 prompt = ai_config['prompt'].format(
                     profile=comprehensive_profile,

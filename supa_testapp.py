@@ -1,4 +1,8 @@
 import streamlit as st
+
+st.write("Verfügbare Secrets:")
+st.write(list(st.secrets.keys()))
+
 import datetime
 import requests
 import pandas as pd

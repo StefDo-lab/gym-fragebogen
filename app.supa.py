@@ -1178,10 +1178,15 @@ with tab2:
                 else:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
                 
+                # HIER IST DIE ÄNDERUNG FÜR SCHRITT 2
+                safe_additional_info = additional_info
+                if not safe_additional_info or safe_additional_info.strip() == "":
+                    safe_additional_info = "Keine zusätzlichen Wünsche angegeben."
+
                 prompt = ai_config['prompt'].format(
                     profile=comprehensive_profile,
                     history_analysis=history_summary,
-                    additional_info=additional_info,
+                    additional_info=safe_additional_info, # ÄNDERUNG HIER
                     training_days=training_days,
                     split_type=split_type,
                     focus=focus,

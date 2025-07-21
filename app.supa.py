@@ -168,11 +168,6 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
-# HIER IST DIE ÄNDERUNG FÜR SCHRITT 3
-# Session-Keeper für längere Sessions
-if 'last_activity' not in st.session_state:
-    st.session_state.last_activity = datetime.datetime.now()
-
 # ---- OpenAI Setup ----
 try:
     openai_key = st.secrets.get("openai_api_key", None)
@@ -853,7 +848,7 @@ if st.sidebar.button("🚪 Abmelden"):
     st.rerun()
 
 # Mobile-optimierte Tabs
-tab_names = ["🏋️ Training", "🤖 KI-Plan", "📊 Stats", "⚙️ Mehr"]
+tab_names = ["Training", "KI-Plan", "Stats", "Mehr"]
 tab1, tab2, tab3, tab4 = st.tabs(tab_names)
 
 with tab1:
@@ -883,7 +878,7 @@ with tab1:
         
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
-            with st.expander(f"🏋️ {workout_name}", expanded=True):
+            with st.expander(f"{workout_name}", expanded=False):
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -1110,7 +1105,7 @@ with tab1:
                     st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
-    st.subheader("🤖 Neuen Trainingsplan mit KI erstellen")
+    st.subheader("Neuen Trainingsplan mit KI erstellen")
     
     if not client:
         st.error("OpenAI API Key ist nicht konfiguriert.")
@@ -1172,7 +1167,7 @@ with tab2:
         with col3:
             focus = st.selectbox("Fokus", ["Ausgewogen", "Kraft", "Hypertrophie", "Kraftausdauer"])
         
-        if st.button("🤖 Plan generieren", type="primary"):
+        if st.button("Plan generieren", type="primary"):
             with st.spinner("KI erstellt deinen personalisierten Plan..."):
                 # Lade Prompt und Config
                 ai_config = get_ai_prompt_template()
@@ -1183,7 +1178,6 @@ with tab2:
                 else:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
                 
-                # HIER IST DIE ÄNDERUNG FÜR SCHRITT 2
                 if not additional_info or additional_info.strip() == "":
                     additional_info = "Keine zusätzlichen Wünsche angegeben."
 
@@ -1293,7 +1287,7 @@ with tab2:
                         st.rerun()
 
 with tab3:
-    st.subheader("📈 Deine Trainingsanalyse")
+    st.subheader("Deine Trainingsanalyse")
     
     _, archive_df = analyze_workout_history(st.session_state.userid)
     
@@ -1347,7 +1341,7 @@ with tab3:
                     st.metric("Fortschritt", f"{weight_change:+.1f} kg")
 
 with tab4:
-    st.subheader("⚙️ Verwaltung")
+    st.subheader("Verwaltung")
     
     col1, col2 = st.columns(2)
     

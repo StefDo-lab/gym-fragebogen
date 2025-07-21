@@ -168,6 +168,11 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
+# HIER IST DIE ÄNDERUNG FÜR SCHRITT 3
+# Session-Keeper für längere Sessions
+if 'last_activity' not in st.session_state:
+    st.session_state.last_activity = datetime.datetime.now()
+
 # ---- OpenAI Setup ----
 try:
     openai_key = st.secrets.get("openai_api_key", None)
@@ -1179,14 +1184,13 @@ with tab2:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
                 
                 # HIER IST DIE ÄNDERUNG FÜR SCHRITT 2
-                safe_additional_info = additional_info
-                if not safe_additional_info or safe_additional_info.strip() == "":
-                    safe_additional_info = "Keine zusätzlichen Wünsche angegeben."
+                if not additional_info or additional_info.strip() == "":
+                    additional_info = "Keine zusätzlichen Wünsche angegeben."
 
                 prompt = ai_config['prompt'].format(
                     profile=comprehensive_profile,
                     history_analysis=history_summary,
-                    additional_info=safe_additional_info, # ÄNDERUNG HIER
+                    additional_info=additional_info,
                     training_days=training_days,
                     split_type=split_type,
                     focus=focus,

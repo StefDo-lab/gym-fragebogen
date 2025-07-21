@@ -9,8 +9,13 @@ import json
 from supabase import create_client, Client
 
 # ---- Configuration ----
-SUPABASE_URL = st.secrets["supabase_url"]
-SUPABASE_KEY = st.secrets["supabase_service_role_key"]
+# Sicherer Code, der eine Fehlermeldung anzeigt statt abzustürzen
+SUPABASE_URL = st.secrets.get("supabase_url")
+SUPABASE_KEY = st.secrets.get("supabase_service_role_key")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("WICHTIG: Supabase URL oder Key konnten nicht geladen werden. Bitte prüfe die Secrets in den App-Einstellungen!")
+    st.stop()
 TABLE_WORKOUT = "workouts"
 TABLE_ARCHIVE = "workout_history"
 TABLE_QUESTIONNAIRE = "questionaire"

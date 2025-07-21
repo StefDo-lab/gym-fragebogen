@@ -8,8 +8,6 @@ import io
 import json
 from supabase import create_client, Client
 
-st.info("Kontrollpunkt 1: Skript gestartet, Imports erfolgreich.")
-
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_service_role_key"]
@@ -128,25 +126,6 @@ def inject_mobile_styles():
             padding: 20px;
             margin: 10px 0;
         }
-        
-        /* Verhindere Streamlit's Fade-Effect */
-        .stApp > div:first-child {
-            opacity: 1 !important;
-            transition: opacity 0.1s !important;
-        }
-        
-        /* Verhindere das Ausgrauen von Inputs während Updates */
-        .stTextInput > div > div > input:disabled,
-        .stNumberInput > div > div > input:disabled {
-            opacity: 1 !important;
-            background-color: white !important;
-        }
-        
-        /* Smooth Updates ohne Flackern */
-        * {
-            -webkit-backface-visibility: hidden;
-            -webkit-transform: translateZ(0);
-        }
     </style>
     
     <script>
@@ -189,9 +168,33 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
-# Session-Keeper für längere Sessions
-if 'last_activity' not in st.session_state:
-    st.session_state.last_activity = datetime.datetime.now()
+# ---- Installation Prompt ----
+def show_install_prompt():
+    if 'install_prompted' not in st.session_state:
+        st.session_state.install_prompted = False
+    
+    if not st.session_state.install_prompted:
+        with st.container():
+            st.info("📱 **App installieren für bessere Erfahrung!**")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Installieren", type="primary"):
+                    st.markdown("""
+                    <script>
+                    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+                        alert('iOS: Tippe auf das Teilen-Symbol (□↑) und dann "Zum Home-Bildschirm"');
+                    } else if (/Android/.test(navigator.userAgent)) {
+                        alert('Android: Tippe auf die drei Punkte (⋮) und dann "App installieren"');
+                    } else {
+                        alert('Desktop: Nutze Chrome und klicke auf das Install-Symbol in der Adressleiste');
+                    }
+                    </script>
+                    """, unsafe_allow_html=True)
+                    st.session_state.install_prompted = True
+            with col2:
+                if st.button("Später"):
+                    st.session_state.install_prompted = True
+                    st.rerun()
 
 # ---- OpenAI Setup ----
 try:
@@ -456,20 +459,20 @@ def analyze_workout_history(user_uuid):
         training_count = len(ex_data.groupby('date'))
         
         analysis_parts.append(f"\n{exercise}:")
-        analysis_parts.append(f"   - Trainiert: {training_count}x")
-        analysis_parts.append(f"   - Aktuelles Gewicht: {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
-        analysis_parts.append(f"   - Fortschritt: {weight_progress:+.1f} kg seit Beginn")
-        analysis_parts.append(f"   - Durchschnitt: {avg_weight:.1f} kg × {avg_reps:.0f} Wdh")
+        analysis_parts.append(f"  - Trainiert: {training_count}x")
+        analysis_parts.append(f"  - Aktuelles Gewicht: {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
+        analysis_parts.append(f"  - Fortschritt: {weight_progress:+.1f} kg seit Beginn")
+        analysis_parts.append(f"  - Durchschnitt: {avg_weight:.1f} kg × {avg_reps:.0f} Wdh")
         if avg_rir > 0:
-            analysis_parts.append(f"   - Durchschnittliche RIR: {avg_rir:.1f}")
+            analysis_parts.append(f"  - Durchschnittliche RIR: {avg_rir:.1f}")
         
         # Coach-Nachrichten für diese Übung
         messages = ex_data[ex_data['messageToCoach'].notna() & (ex_data['messageToCoach'] != '')]
         if not messages.empty:
-            analysis_parts.append(f"   - Feedback vom Athleten:")
+            analysis_parts.append(f"  - Feedback vom Athleten:")
             for _, msg_row in messages.iterrows():
                 date_str = msg_row['date'].strftime('%d.%m.')
-                analysis_parts.append(f"     • {date_str}: \"{msg_row['messageToCoach']}\"")
+                analysis_parts.append(f"    • {date_str}: \"{msg_row['messageToCoach']}\"")
     
     # 3. Workout-Split Analyse
     analysis_parts.append("\nWORKOUT-VERTEILUNG:")
@@ -488,7 +491,7 @@ def analyze_workout_history(user_uuid):
         if len(rir_by_exercise) > 0:
             analysis_parts.append("- Höchste Intensität (niedrigste RIR):")
             for ex, rir in rir_by_exercise.head(3).items():
-                analysis_parts.append(f"   • {ex}: RIR {rir:.1f}")
+                analysis_parts.append(f"  • {ex}: RIR {rir:.1f}")
     
     # 5. Allgemeine Coach-Nachrichten (nicht übungsspezifisch)
     all_messages = df[df['messageToCoach'].notna() & (df['messageToCoach'] != '')]['messageToCoach'].unique()
@@ -528,9 +531,9 @@ def parse_ai_plan_to_rows(plan_text, user_uuid, user_name):
         workout_patterns = [
             r'^\*\*(.+?):\*\*',  # **Workout Name:**
             r'^\*\*(.+)\*\*',    # **Workout Name** (ohne Doppelpunkt)
-            r'^##\s*(.+)',      # ## Workout Name
-            r'^###\s*(.+)',     # ### Workout Name
-            r'^(.+):$'          # Workout Name:
+            r'^##\s*(.+)',       # ## Workout Name
+            r'^###\s*(.+)',      # ### Workout Name
+            r'^(.+):$'           # Workout Name:
         ]
         
         workout_found = False
@@ -780,13 +783,14 @@ def export_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # ---- Login/Auth Section ----
-st.info(f"Kontrollpunkt 2: Prüfe Login-Status. User-ID ist: {st.session_state.get('userid')}")
 if 'userid' not in st.session_state:
     st.session_state['userid'] = None
     st.session_state['user_email'] = None
 
 if not st.session_state.userid:
-    st.info("Kontrollpunkt 3: User ist NICHT eingeloggt. Zeige Login-Formular.")
+    # Zeige Install-Prompt beim ersten Besuch
+    show_install_prompt()
+    
     st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
     
     # Nur Login, keine Registrierung (da diese im Fragebogen erfolgt)
@@ -829,7 +833,7 @@ if not st.session_state.userid:
                         else:
                             st.error("Anmeldung fehlgeschlagen")
 
-                        
+                            
                     except Exception as e:
                         if "Invalid login credentials" in str(e):
                             st.error("Ungültige Email oder Passwort")
@@ -858,7 +862,6 @@ if not st.session_state.userid:
     st.stop()
 
 # ---- Nach erfolgreichem Login ----
-st.info("Kontrollpunkt 4: User ist eingeloggt. Baue Hauptseite auf.")
 # Einfacher Titel ohne Header-Buttons
 st.markdown("<h1 style='text-align: center; margin: 0;'>💪 Workout Tracker</h1>", unsafe_allow_html=True)
 
@@ -876,11 +879,10 @@ if st.sidebar.button("🚪 Abmelden"):
     st.rerun()
 
 # Mobile-optimierte Tabs
-tab_names = ["Training", "KI-Plan", "Stats", "Mehr"]
+tab_names = ["🏋️ Training", "🤖 KI-Plan", "📊 Stats", "⚙️ Mehr"]
 tab1, tab2, tab3, tab4 = st.tabs(tab_names)
 
 with tab1:
-    st.info("Kontrollpunkt 5: Tab 1 'Training' wird geladen.")
     st.subheader("Deine Workouts")
     df = load_user_workouts(st.session_state.userid)
     
@@ -907,7 +909,7 @@ with tab1:
         
         for workout_name in workout_order:
             workout_group = df[df['workout'] == workout_name]
-            with st.expander(f"{workout_name}", expanded=False):
+            with st.expander(f"🏋️ {workout_name}", expanded=True):
                 # Gruppiere nach Übung, behalte aber die Reihenfolge bei
                 exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
@@ -1134,7 +1136,7 @@ with tab1:
                     st.error("Bitte gib sowohl einen Workout-Namen als auch eine erste Übung ein")
 
 with tab2:
-    st.subheader("Neuen Trainingsplan mit KI erstellen")
+    st.subheader("🤖 Neuen Trainingsplan mit KI erstellen")
     
     if not client:
         st.error("OpenAI API Key ist nicht konfiguriert.")
@@ -1143,7 +1145,7 @@ with tab2:
         comprehensive_profile = get_comprehensive_user_profile(st.session_state.userid)
         history_summary, _ = analyze_workout_history(st.session_state.userid)
         
-        with st.expander("Deine Daten für die KI", expanded=False):
+        with st.expander("Deine Daten für die KI", expanded=True):
             if comprehensive_profile:
                 st.info("Dein vollständiges Profil:")
                 
@@ -1164,7 +1166,7 @@ with tab2:
                 with col2:
                     st.markdown("**🏥 Gesundheit:**")
                     health_keys = ["gesundheitszustand", "einschränkungen", "schmerzen", 
-                                   "operationen", "bandscheibenvorfall", "bluthochdruck"]
+                                  "operationen", "bandscheibenvorfall", "bluthochdruck"]
                     has_health_issues = False
                     for key in health_keys:
                         if key in comprehensive_profile:
@@ -1196,7 +1198,7 @@ with tab2:
         with col3:
             focus = st.selectbox("Fokus", ["Ausgewogen", "Kraft", "Hypertrophie", "Kraftausdauer"])
         
-        if st.button("Plan generieren", type="primary"):
+        if st.button("🤖 Plan generieren", type="primary"):
             with st.spinner("KI erstellt deinen personalisierten Plan..."):
                 # Lade Prompt und Config
                 ai_config = get_ai_prompt_template()
@@ -1206,10 +1208,6 @@ with tab2:
                     weight_instruction = "Setze alle Gewichte auf 0 kg, da keine Trainingshistorie vorhanden ist."
                 else:
                     weight_instruction = "Basiere die Gewichte auf der Trainingshistorie und passe sie progressiv an."
-                
-                # Stelle sicher dass additional_info nicht leer ist
-                if not additional_info or additional_info.strip() == "":
-                    additional_info = "Keine zusätzlichen Wünsche angegeben."
                 
                 prompt = ai_config['prompt'].format(
                     profile=comprehensive_profile,

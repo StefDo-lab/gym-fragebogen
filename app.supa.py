@@ -168,34 +168,6 @@ def inject_mobile_styles():
 # Rufe das gleich am Anfang auf
 inject_mobile_styles()
 
-# ---- Installation Prompt ----
-def show_install_prompt():
-    if 'install_prompted' not in st.session_state:
-        st.session_state.install_prompted = False
-    
-    if not st.session_state.install_prompted:
-        with st.container():
-            st.info("📱 **App installieren für bessere Erfahrung!**")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("Installieren", type="primary"):
-                    st.markdown("""
-                    <script>
-                    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
-                        alert('iOS: Tippe auf das Teilen-Symbol (□↑) und dann "Zum Home-Bildschirm"');
-                    } else if (/Android/.test(navigator.userAgent)) {
-                        alert('Android: Tippe auf die drei Punkte (⋮) und dann "App installieren"');
-                    } else {
-                        alert('Desktop: Nutze Chrome und klicke auf das Install-Symbol in der Adressleiste');
-                    }
-                    </script>
-                    """, unsafe_allow_html=True)
-                    st.session_state.install_prompted = True
-            with col2:
-                if st.button("Später"):
-                    st.session_state.install_prompted = True
-                    st.rerun()
-
 # ---- OpenAI Setup ----
 try:
     openai_key = st.secrets.get("openai_api_key", None)
@@ -788,9 +760,6 @@ if 'userid' not in st.session_state:
     st.session_state['user_email'] = None
 
 if not st.session_state.userid:
-    # Zeige Install-Prompt beim ersten Besuch
-    show_install_prompt()
-    
     st.markdown("<h2 style='text-align: center;'>Willkommen beim Workout Tracker! 💪</h2>", unsafe_allow_html=True)
     
     # Nur Login, keine Registrierung (da diese im Fragebogen erfolgt)

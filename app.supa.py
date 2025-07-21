@@ -1254,7 +1254,7 @@ with tab2:
             if st.session_state.get('ai_plan_rows'):
                 col1, col2 = st.columns(2)
                 with col1:
-                    if st.button("✅ Plan aktivieren", type="primary", use_container_width=True):
+                    if st.button("Plan aktivieren", type="primary", use_container_width=True, key="activate_plan"):
                         # Lösche aktuelle Workouts
                         df = load_user_workouts(st.session_state.userid)
                         if not df.empty:
@@ -1279,7 +1279,7 @@ with tab2:
                             st.error("Fehler beim Aktivieren des Plans")
                 
                 with col2:
-                    if st.button("❌ Plan verwerfen", use_container_width=True):
+                    if st.button("Plan verwerfen", use_container_width=True, key="discard_plan"):
                         del st.session_state['ai_plan']
                         del st.session_state['ai_plan_rows']
                         if 'ai_plan_explanation' in st.session_state:

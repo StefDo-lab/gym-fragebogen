@@ -127,7 +127,11 @@ def fragebogen():
         st.header("Persönliche Daten")
         forename = st.text_input("Vorname *")
         surename = st.text_input("Nachname *")
-
+        
+        # --- NEUE FELDER HINZUGEFÜGT ---
+        grade = st.text_input("Titel/Grad")
+        gradePost = st.text_input("Titel/Grad (nachgestellt)")
+        
         # --- KORREKTUR FÜR GEBURTSDATUM ---
         today = datetime.date.today()
         min_date = today.replace(year=today.year - 100)
@@ -137,7 +141,7 @@ def fragebogen():
             "Geburtsdatum *",
             min_value=min_date,
             max_value=max_date,
-            value=max_date  # Setzt einen sinnvollen Startwert
+            value=max_date
         )
         # --- ENDE DER KORREKTUR ---
         
@@ -178,7 +182,7 @@ def fragebogen():
 
         osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die Osteoporose:", expanded=(osteoporose == "Ja")):
-            osteoporoseDetails = st.text_area("Osteoporose-Details", value="", key="osteoporose_details")
+            osteporoseDetails = st.text_area("Osteoporose-Details", value="", key="osteoporose_details")
 
         hypertension = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe den Bluthochdruck:", expanded=(hypertension == "Ja")):
@@ -197,7 +201,6 @@ def fragebogen():
             strokeDetails = st.text_area("Schlaganfall-Details", value="", key="stroke_details")
 
         healthOther = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
-        goalsDetailExtra = st.text_area("Was sind deine konkreten Ziele beim Training?")
         healthCondition = st.text_area("Wie ist dein aktueller Gesundheitszustand?")
         restrictions = st.text_area("Gibt es Einschränkungen bei Bewegung oder Sport?")
         pains = st.text_area("Wo spürst du Schmerzen oder Beschwerden?")
@@ -215,13 +218,12 @@ def fragebogen():
             st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
         else:
             data_payload = {
-                # --- FINALE KORREKTUR DES FEHLERS ---
-                # Diese ID kommt vom eingeloggten Benutzer (Supabase Auth)
                 "auth_user_id": st.session_state.user.id,
-                # Diese ID wird neu erzeugt und dient zur Verknüpfung der Datentabellen
                 "uuid": str(uuid.uuid4()),
                 "forename": forename,
                 "surename": surename,
+                "grade": grade, # --- HINZUGEFÜGT ---
+                "gradePost": gradePost, # --- HINZUGEFÜGT ---
                 "birthday": str(birthday),
                 "email": email,
                 "phone": phone,
@@ -242,7 +244,7 @@ def fragebogen():
                 "discHerniated": discHerniated,
                 "discDetails": discDetails,
                 "osteoporose": osteoporose,
-                "osteoporoseDetails": osteoporoseDetails,
+                "osteporoseDetails": osteporoseDetails, # --- KORRIGIERT ---
                 "hypertension": hypertension,
                 "hypertensionDetails": hypertensionDetails,
                 "hernia": hernia,
@@ -252,7 +254,6 @@ def fragebogen():
                 "stroke": stroke,
                 "strokeDetails": strokeDetails,
                 "healthOther": healthOther,
-                "goalsDetailExtra": goalsDetailExtra,
                 "healthCondition": healthCondition,
                 "restrictions": restrictions,
                 "pains": pains,

@@ -15,7 +15,7 @@ from supabase import create_client, Client
 st.write("Imports funktionieren!")
 # ---- Configuration ----
 SUPABASE_URL = st.secrets["supabase_url"]
-SUPABASE_KEY = st.secrets["supabase_service_role_key"]
+SUPABASE_KEY = st.secrets["supabase_key"]
 TABLE_WORKOUT = "workouts"
 TABLE_ARCHIVE = "workout_history"
 TABLE_QUESTIONNAIRE = "questionaire"

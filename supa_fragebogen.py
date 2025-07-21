@@ -5,18 +5,22 @@ import uuid
 from supabase import create_client, Client
 
 # ---- Supabase Setup ----
-url = st.secrets["supabase_url"]
-key = st.secrets["supabase_key"]
-supabase: Client = create_client(url, key)
-
+# Secrets aus Streamlit holen
 SUPABASE_URL = st.secrets["supabase_url"]
-SUPABASE_KEY = st.secrets["supabase_service_role_key"]
+# Der 'anon' key wird für die Authentifizierung (Login/Register) verwendet
+SUPABASE_ANON_KEY = st.secrets["supabase_key"]
+# Der 'service_role' key wird für administrative Datenbankzugriffe (hier: das Einfügen von Daten) verwendet
+SUPABASE_SERVICE_KEY = st.secrets["supabase_service_role_key"]
 SUPABASE_TABLE = "questionaire"
 
+# Supabase Client für die Authentifizierung initialisieren
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
 def insert_into_supabase(data):
+    """Fügt die Formulardaten mit dem sicheren Service Role Key in die Supabase-Tabelle ein."""
     headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
         "Content-Type": "application/json"
     }
     response = requests.post(
@@ -27,6 +31,7 @@ def insert_into_supabase(data):
     return response
 
 def send_to_make_webhook(payload):
+    """Sendet die Daten an einen Make.com Webhook."""
     WEBHOOK_URL = "https://hook.eu2.make.com/4kt4g15jfxcn7t78coox6accz79ui47f"
     try:
         response = requests.post(WEBHOOK_URL, json=payload, timeout=30)
@@ -34,12 +39,14 @@ def send_to_make_webhook(payload):
     except Exception as e:
         return e
 
+# Session State initialisieren
 if "user" not in st.session_state:
     st.session_state.user = None
 if "mode" not in st.session_state:
     st.session_state.mode = "login"
 
 def login():
+    """Zeigt das Login-Formular und verarbeitet die Eingaben."""
     st.subheader("Login")
     email = st.text_input("E-Mail", key="login_email")
     password = st.text_input("Passwort", type="password", key="login_pw")
@@ -52,8 +59,10 @@ def login():
             if res.user:
                 st.session_state.user = res.user
                 st.success(f"Willkommen, {res.user.email}")
+                st.rerun() # Seite neu laden, um den Fragebogen anzuzeigen
         except Exception as e:
             st.error(f"Login fehlgeschlagen: {e}")
+            
     if st.button("Passwort vergessen?"):
         if email:
             try:
@@ -65,6 +74,7 @@ def login():
             st.warning("Bitte gib deine E-Mail-Adresse ein.")
 
 def register():
+    """Zeigt das Registrierungs-Formular und verarbeitet die Eingaben."""
     st.subheader("Registrieren")
     email = st.text_input("E-Mail", key="reg_email")
     password = st.text_input("Passwort", type="password", key="reg_pw")
@@ -77,21 +87,27 @@ def register():
             if res.user:
                 st.success("Registrierung erfolgreich! Bitte E-Mail bestätigen und anschließend einloggen.")
                 st.session_state.mode = "login"
+                st.rerun()
         except Exception as e:
             st.error(f"Registrierung fehlgeschlagen: {e}")
 
 def logout():
+    """Loggt den Benutzer aus."""
     st.session_state.user = None
     st.success("Du wurdest ausgeloggt.")
+    st.rerun()
 
 def auth_flow():
+    """Steuert die Anzeige von Login oder Registrierung."""
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Zum Login", key="switch_login"):
+        if st.button("Zum Login", key="switch_login", use_container_width=True):
             st.session_state.mode = "login"
+            st.rerun()
     with col2:
-        if st.button("Zur Registrierung", key="switch_register"):
+        if st.button("Zur Registrierung", key="switch_register", use_container_width=True):
             st.session_state.mode = "register"
+            st.rerun()
 
     if st.session_state.mode == "login":
         login()
@@ -99,22 +115,36 @@ def auth_flow():
         register()
 
 def fragebogen():
+    """Zeigt den Fragebogen für eingeloggte Benutzer an."""
     st.success(f"Eingeloggt als {st.session_state.user.email}")
     if st.button("Logout", key="logout_button"):
         logout()
         return
 
-    st.markdown("**Deine Benutzer-ID:** `{}`".format(st.session_state.user.id))
+    st.markdown(f"**Deine Benutzer-ID:** `{st.session_state.user.id}`")
 
     with st.form("fitness_fragebogen"):
         st.header("Persönliche Daten")
         forename = st.text_input("Vorname *")
         surename = st.text_input("Nachname *")
-        birthday = st.date_input("Geburtsdatum *", value=datetime.date(2000, 1, 1))
-        email = st.text_input("E-Mail-Adresse *")
+
+        # --- KORREKTUR FÜR GEBURTSDATUM ---
+        today = datetime.date.today()
+        min_date = today.replace(year=today.year - 100)
+        max_date = today.replace(year=today.year - 16)
+        
+        birthday = st.date_input(
+            "Geburtsdatum *",
+            min_value=min_date,
+            max_value=max_date,
+            value=max_date  # Setzt einen sinnvollen Startwert
+        )
+        # --- ENDE DER KORREKTUR ---
+        
+        email = st.text_input("E-Mail-Adresse *", value=st.session_state.user.email)
         phone = st.text_input("Telefonnummer *")
         gender = st.selectbox("Geschlecht", ["Bitte wählen...", "männlich", "weiblich", "divers"])
-        date = st.date_input("Datum der Erfassung", value=datetime.date.today())
+        date = st.date_input("Datum der Erfassung", value=datetime.date.today(), disabled=True)
         studio = st.selectbox("Studio *", ["Bitte wählen...", "Studio 1", "Studio 2"])
 
         st.subheader("Körperdaten (optional)")
@@ -136,35 +166,35 @@ def fragebogen():
         st.subheader("Medizinische Fragen")
         surgery = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die OP (Art, Zeitpunkt, Folgen):", expanded=(surgery == "Ja")):
-            surgeryDetails = st.text_area("OP-Details", value="")
+            surgeryDetails = st.text_area("OP-Details", value="", key="surgery_details")
 
         radiatingPain = st.radio("2. Ausstrahlende Schmerzen?", ["Nein", "Ja"])
         with st.expander("Wo und wie äußern sich die Schmerzen?", expanded=(radiatingPain == "Ja")):
-            painDetails = st.text_area("Schmerz-Details", value="")
+            painDetails = st.text_area("Schmerz-Details", value="", key="pain_details")
 
         discHerniated = st.radio("3. Bandscheibenvorfall in den letzten 6–12 Monaten?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe den Bandscheibenvorfall:", expanded=(discHerniated == "Ja")):
-            discDetails = st.text_area("Bandscheiben-Details", value="")
+            discDetails = st.text_area("Bandscheiben-Details", value="", key="disc_details")
 
         osteoporose = st.radio("4. Osteoporose?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die Osteoporose:", expanded=(osteoporose == "Ja")):
-            osteporoseDetails = st.text_area("Osteoporose-Details", value="")
+            osteoporoseDetails = st.text_area("Osteoporose-Details", value="", key="osteoporose_details")
 
         hypertension = st.radio("5. Bluthochdruck?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe den Bluthochdruck:", expanded=(hypertension == "Ja")):
-            hypertensionDetails = st.text_area("Bluthochdruck-Details", value="")
+            hypertensionDetails = st.text_area("Bluthochdruck-Details", value="", key="hypertension_details")
 
         hernia = st.radio("6. Innere Brüche?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die Brüche:", expanded=(hernia == "Ja")):
-            herniaDetails = st.text_area("Bruch-Details", value="")
+            herniaDetails = st.text_area("Bruch-Details", value="", key="hernia_details")
 
         cardic = st.radio("7. Herzprobleme?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die Herzprobleme:", expanded=(cardic == "Ja")):
-            cardicDetails = st.text_area("Herz-Details", value="")
+            cardicDetails = st.text_area("Herz-Details", value="", key="cardic_details")
 
         stroke = st.radio("8. Schlaganfall, Epilepsie o. Ä.?", ["Nein", "Ja"])
         with st.expander("Bitte beschreibe die Erkrankung:", expanded=(stroke == "Ja")):
-            strokeDetails = st.text_area("Schlaganfall-Details", value="")
+            strokeDetails = st.text_area("Schlaganfall-Details", value="", key="stroke_details")
 
         healthOther = st.text_area("Sonstige Gesundheitsprobleme oder Medikamente?")
         goalsDetailExtra = st.text_area("Was sind deine konkreten Ziele beim Training?")
@@ -185,7 +215,10 @@ def fragebogen():
             st.error("Bitte fülle alle Pflichtfelder aus und stimme der Datenschutzerklärung zu.")
         else:
             data_payload = {
-                "user_id": st.session_state.user.id,
+                # --- FINALE KORREKTUR DES FEHLERS ---
+                # Diese ID kommt vom eingeloggten Benutzer (Supabase Auth)
+                "auth_user_id": st.session_state.user.id,
+                # Diese ID wird neu erzeugt und dient zur Verknüpfung der Datentabellen
                 "uuid": str(uuid.uuid4()),
                 "forename": forename,
                 "surename": surename,
@@ -209,7 +242,7 @@ def fragebogen():
                 "discHerniated": discHerniated,
                 "discDetails": discDetails,
                 "osteoporose": osteoporose,
-                "osteporoseDetails": osteporoseDetails,
+                "osteoporoseDetails": osteoporoseDetails,
                 "hypertension": hypertension,
                 "hypertensionDetails": hypertensionDetails,
                 "hernia": hernia,
@@ -219,7 +252,7 @@ def fragebogen():
                 "stroke": stroke,
                 "strokeDetails": strokeDetails,
                 "healthOther": healthOther,
-                "goalsDetail": goalsDetailExtra,
+                "goalsDetailExtra": goalsDetailExtra,
                 "healthCondition": healthCondition,
                 "restrictions": restrictions,
                 "pains": pains,
@@ -242,7 +275,7 @@ def fragebogen():
             else:
                 st.error(f"❌ Fehler beim Supabase-Speichern: {response_db.status_code} - {response_db.text}")
 
-st.title("Fitness- und Gesundheitsfragebogen (mit Login & Registrierung)")
+st.title("Fitness- und Gesundheitsfragebogen")
 
 if st.session_state.user:
     fragebogen()

@@ -4,7 +4,10 @@
 import streamlit as st
 import datetime
 import uuid
-from supabase_utils import supabase_auth_client, insert_data
+import time
+import pandas as pd
+from supabase_utils import supabase_auth_client, insert_data, get_user_profile_by_data_uuid, load_user_workouts
+from ai_utils import get_chat_response, parse_ai_plan_to_rows
 
 # --- General UI Components ---
 def inject_mobile_styles():
@@ -16,7 +19,7 @@ def inject_mobile_styles():
         footer {visibility: hidden;}
         header {visibility: hidden !important;}
         .block-container { padding-top: 1rem; }
-        /* Add more of your custom CSS from the original file here */
+        /* Add the rest of your custom CSS from the original file here */
     </style>
     """, unsafe_allow_html=True)
 
@@ -70,12 +73,10 @@ def display_questionnaire_page():
     """Displays the questionnaire form for new users."""
     display_milo_logo()
     st.header("Lerne deinen Coach Milo kennen")
-    st.info("Hallo! Ich bin Milo. Um den perfekten Plan für dich zu erstellen, muss ich dich erst ein wenig kennenlernen. Das dauert nur 2 Minuten.")
+    st.info("Hallo! Ich bin Milo, dein persönlicher KI-Coach. Um den perfekten Plan für dich zu erstellen, muss ich dich erst ein wenig kennenlernen. Das dauert nur 2 Minuten.")
 
     with st.form("fitness_fragebogen"):
         # This is the full form from your questionnaire app.
-        # For brevity, only a few fields are shown here.
-        # Copy all your st.text_input, st.selectbox etc. here.
         st.header("Persönliche Daten")
         forename = st.text_input("Vorname *")
         surename = st.text_input("Nachname *")
@@ -112,20 +113,97 @@ def display_questionnaire_page():
                 else:
                     st.error(f"Fehler beim Speichern: {response.text}")
 
-def display_main_app_page():
+def render_chat_tab(user_profile, history_summary):
+    """Renders the interactive chat UI for plan generation."""
+    st.header("Planung mit Milo")
+
+    # Initialize chat history in session state if it doesn't exist
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen? Sag mir einfach, was du dir vorstellst."}]
+
+    # Display existing messages
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Get user input
+    if prompt := st.chat_input("Was möchtest du trainieren?"):
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate and display assistant response
+        with st.chat_message("assistant"):
+            with st.spinner("Milo denkt nach..."):
+                # For the very first user message, we inject the profile and history
+                if len(st.session_state.messages) == 2: # Assistant welcome + first user prompt
+                    full_initial_prompt = f"""
+Hier sind die Hintergrundinformationen über den Nutzer. Erstelle basierend darauf und seiner Anfrage den ersten Plan.
+
+---
+BENUTZERPROFIL:
+{user_profile}
+---
+TRAININGSHISTORIE:
+{history_summary}
+---
+AKTUELLE ANFRAGE DES NUTZERS:
+{prompt}
+"""
+                    # Create a temporary history for the first call
+                    temp_history = [{"role": "user", "content": full_initial_prompt}]
+                    response = get_chat_response(temp_history)
+                else:
+                    # For all subsequent messages, just send the conversation history
+                    response = get_chat_response(st.session_state.messages)
+                
+                st.markdown(response)
+                # Add assistant response to history
+                st.session_state.messages.append({"role": "assistant", "content": response})
+
+                # Store the latest plan for activation
+                st.session_state.latest_plan_text = response
+
+
+    # "Activate Plan" button should be visible if a plan has been generated
+    if 'latest_plan_text' in st.session_state and st.session_state.latest_plan_text:
+        st.divider()
+        if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
+            # Here you would call the parsing and database insertion logic
+            st.success("Plan wird aktiviert... (Logik hier einfügen)")
+            # Reset chat for the next planning session
+            del st.session_state.messages
+            del st.session_state.latest_plan_text
+            st.rerun()
+
+
+def display_main_app_page(user_profile):
     """Displays the main workout tracker UI with tabs."""
     st.title(f"Coach Milo")
+    
+    # We need the user's data UUID for most operations
+    user_data_uuid = user_profile.get("uuid")
     
     tab1, tab2, tab3, tab4 = st.tabs(["Training", "Chat mit Milo", "Stats", "Profil"])
 
     with tab1:
         st.header("Dein Training heute")
-        # ... (Logic from your workout tracker's tab1 goes here) ...
+        workouts = load_user_workouts(user_data_uuid)
+        if not workouts:
+            st.info("Du hast noch keine aktiven Workouts. Erstelle einen neuen Plan im 'Chat mit Milo'-Tab!")
+        else:
+            df = pd.DataFrame(workouts)
+            # ... (Logic from your workout tracker's tab1 to display workouts goes here) ...
+            st.dataframe(df) # Placeholder
 
     with tab2:
-        st.header("Planung mit Milo")
-        st.info("Hier entsteht bald der interaktive Chat mit Milo.")
-        # ... (This will become the interactive chat) ...
+        # We need the history summary for the chat context
+        # Note: This is a simplified call. In a real app, you'd build the summary properly.
+        history_summary = "Keine Trainingshistorie vorhanden." # Placeholder
+        render_chat_tab(user_profile, history_summary)
 
     with tab3:
         st.header("Deine Fortschritte")

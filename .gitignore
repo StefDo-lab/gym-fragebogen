@@ -2,3 +2,7 @@ creds.json
 __pycache__/
 *.pyc
 .venv/
+curl -X GET httpscloud.seatable.ioa
+aktuelle_trainings.csv
+Textdokument (neu).txt
+~$Fragebogen_2025-07-16.xlsx

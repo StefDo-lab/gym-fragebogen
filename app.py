@@ -2,7 +2,8 @@
 # This is the main file that runs the Streamlit app.
 
 import streamlit as st
-from supabase_utils import check_user_profile_exists, get_user_profile_by_auth_id
+# --- KORREKTUR: Unnötigen und falschen Import entfernt ---
+from supabase_utils import check_user_profile_exists
 from ui_components import (
     inject_mobile_styles, 
     display_login_page, 

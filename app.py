@@ -2,7 +2,7 @@
 # This is the main file that runs the Streamlit app.
 
 import streamlit as st
-from supabase_utils import check_user_profile_exists
+from supabase_utils import check_user_profile_exists, get_user_profile_by_auth_id
 from ui_components import (
     inject_mobile_styles, 
     display_login_page, 
@@ -24,6 +24,9 @@ if "user" not in st.session_state:
     st.session_state.user = None
 if "questionnaire_complete" not in st.session_state:
     st.session_state.questionnaire_complete = False
+if "user_profile" not in st.session_state:
+    st.session_state.user_profile = None
+
 
 # --- Main App Logic ---
 def main():
@@ -37,12 +40,12 @@ def main():
         display_login_page()
     else:
         # If user is logged in, check if they have a profile.
-        # We check the session state first to avoid repeated database calls.
-        if not st.session_state.questionnaire_complete:
-            # Check the database once per session
-            profile_exists, _ = check_user_profile_exists(st.session_state.user.id)
+        # We cache the profile in session_state to avoid repeated database calls.
+        if st.session_state.user_profile is None:
+            profile_exists, profile_data = check_user_profile_exists(st.session_state.user.id)
             if profile_exists:
                 st.session_state.questionnaire_complete = True
+                st.session_state.user_profile = profile_data
             else:
                 # If no profile, show the questionnaire
                 display_questionnaire_page()
@@ -50,7 +53,7 @@ def main():
         
         # If profile exists, show the main app
         if st.session_state.questionnaire_complete:
-            display_main_app_page()
+            display_main_app_page(st.session_state.user_profile)
 
 if __name__ == "__main__":
     main()

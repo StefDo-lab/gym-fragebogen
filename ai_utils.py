@@ -46,16 +46,18 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # Match workout names like **Workout Name:**
-        workout_match = re.match(r'^\*\*(.*?):\*\*', line)
-        if workout_match:
+        # KORRIGIERT: Flexiblere Erkennung des Workout-Namens (Doppelpunkt ist optional)
+        # Verhindert auch, dass eine Übung fälschlicherweise als Workout-Name erkannt wird.
+        workout_match = re.match(r'^\*\*(.+?):?\*\*', line)
+        if workout_match and ":" not in workout_match.group(1):
             current_workout = workout_match.group(1).strip()
             continue
         
         # Match exercise lines like "- Exercise: 3 Sätze, 8-10 Wdh, 60 kg (Fokus: ...)"
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
-            exercise_name = exercise_match.group(1).strip()
+            # KORRIGIERT: Bereinige den Übungsnamen von Markdown-Sternchen
+            exercise_name = exercise_match.group(1).strip().strip('*')
             details = exercise_match.group(2).strip()
             
             try:

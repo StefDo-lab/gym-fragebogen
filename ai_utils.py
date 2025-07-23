@@ -29,19 +29,17 @@ def get_ai_prompt_template():
     """Loads the main AI prompt from an external file."""
     try:
         with open('ai_prompt.txt', 'r', encoding='utf-8') as file:
-            # We only need the prompt part, not the configuration header
             content = file.read()
             if '### ENDE KONFIGURATION ###' in content:
                 return content.split('### ENDE KONFIGURATION ###', 1)[1]
             return content
     except FileNotFoundError:
         st.error("WICHTIG: Die Datei 'ai_prompt.txt' wurde nicht gefunden. Bitte erstellen Sie sie.")
-        return "Erstelle einen Trainingsplan für: {user_request}" # Fallback
+        return "Erstelle einen Trainingsplan für: {user_request}"
 
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
     Parses the AI-generated plan text into structured data for the database.
-    This version correctly distinguishes between workout titles and exercises.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
@@ -58,17 +56,14 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # Match workout names like **Workout Name:**
         if line.startswith('**') and line.endswith('**'):
             current_workout = line.strip('*').strip(':').strip()
-            plan_started = True # The plan section has officially started
+            plan_started = True
             continue
         
-        # Don't process lines before the first workout title
         if not plan_started:
             continue
 
-        # Match exercise lines like "- Exercise: 3 Sätze, ..."
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip().strip('*')
@@ -108,36 +103,39 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
     return rows
 
-def get_chat_response(user_request: str, user_profile: dict, history_analysis: str, additional_info: str):
-    """Builds the full prompt from the template and gets a response from the AI."""
+def get_chat_response(messages: list, user_profile: dict, history_analysis: str, additional_info: dict):
+    """Builds the prompt from the template and chat history, then gets a response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
     prompt_template = get_ai_prompt_template()
     
-    # Dummy data for template placeholders that are not yet implemented
-    # In a real scenario, these would be filled with actual data
-    training_days = additional_info.get("training_days", 3)
-    split_type = additional_info.get("split_type", "Ganzkörper")
-    focus = additional_info.get("focus", "Muskelaufbau")
-    weight_instruction = "Basiere die Gewichte auf der Trainingshistorie."
+    # Letzte User-Nachricht für das Template extrahieren
+    last_user_request = ""
+    for msg in reversed(messages):
+        if msg["role"] == "user":
+            last_user_request = msg["content"]
+            break
 
-    # Fill the template with the actual user data
-    full_prompt = prompt_template.format(
+    # Platzhalter im Template füllen
+    system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis=history_analysis,
         additional_info=additional_info.get("text", "Keine"),
-        training_days=training_days,
-        split_type=split_type,
-        focus=focus,
-        weight_instruction=weight_instruction,
-        user_request=user_request # Pass the user's direct message
+        training_days=additional_info.get("training_days", 3),
+        split_type=additional_info.get("split_type", "Ganzkörper"),
+        focus=additional_info.get("focus", "Muskelaufbau"),
+        weight_instruction="Basiere die Gewichte auf der Trainingshistorie.",
+        user_request=last_user_request
     )
+
+    # System-Prompt und Konversationsverlauf kombinieren
+    messages_to_send = [{"role": "system", "content": system_prompt_content}] + messages
 
     try:
         response = ai_client.chat.completions.create(
-            model="gpt-4o", # Model from prompt file
-            messages=[{"role": "user", "content": full_prompt}],
+            model="gpt-4o",
+            messages=messages_to_send,
             temperature=0.7
         )
         return response.choices[0].message.content

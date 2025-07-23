@@ -3,123 +3,127 @@
 
 import streamlit as st
 import re
-import pandas as pd
 from openai import OpenAI
-import datetime
 
 # --- OpenAI Client Initialization ---
 @st.cache_resource
 def init_openai_client():
     """Initializes and returns the OpenAI client."""
     try:
-        openai_key = st.secrets.get("openai_api_key", None)
+        openai_key = st.secrets.get("openai_api_key")
         if openai_key:
             return OpenAI(api_key=openai_key)
-    except Exception:
+        else:
+            st.error("OpenAI API Key nicht in den Secrets gefunden.")
+            return None
+    except Exception as e:
+        st.error(f"Fehler bei der Initialisierung des OpenAI Clients: {e}")
         return None
-    return None
 
 ai_client = init_openai_client()
 
 # --- AI Prompt and Plan Parsing Functions ---
-def get_ai_prompt_template():
-    """
-    Loads the AI prompt template and configuration from an external file.
-    Falls back to a default prompt if the file is not found.
-    """
-    # This function remains for potential future use or as a fallback.
-    # The main chat logic uses a system prompt directly.
-    try:
-        with open('ai_prompt.txt', 'r', encoding='utf-8') as file:
-            return file.read()
-    except FileNotFoundError:
-        st.warning("ai_prompt.txt nicht gefunden! Verwende eingebautes Template.")
-        return """
-Du bist Milo, ein persönlicher KI-Coach, benannt nach dem antiken Athleten Milon von Kroton. 
-Sprich immer in der Ich-Form, sei motivierend und erkläre deine Entscheidungen.
-Beginne deine Antwort immer mit einer kurzen, persönlichen Erklärung, warum du diesen Plan erstellt hast.
-**Dein persönlicher Trainingsplan**
-[Hier deine Erklärung einfügen]
-... (rest of your detailed prompt) ...
-"""
 
-def parse_ai_plan_to_rows(plan_text, user_data_uuid, user_name):
-    """Parses the AI-generated plan text into structured data for the database."""
+def parse_ai_plan_to_rows(ai_response_text: str, auth_user_id: str) -> list:
+    """
+    Parses a Markdown table from the AI's response into a list of dictionaries
+    ready for Supabase insertion into the 'workouts' table.
+    """
     rows = []
-    current_date = datetime.date.today().isoformat()
-    current_workout = "Unbenanntes Workout"
+    # Find all lines that look like Markdown table rows (surrounded by |)
+    table_lines = [line.strip() for line in ai_response_text.split('\n') if line.strip().startswith('|') and line.strip().endswith('|')]
     
-    lines = plan_text.split('\n')
+    if len(table_lines) < 3:
+        # If no table is found, we cannot proceed.
+        return []
+
+    # --- Column Name Mapping ---
+    # Maps possible German/English names to the exact DB column names
+    COLUMN_MAP = {
+        'tag': 'day',
+        'day': 'day',
+        'übung': 'exercise_name',
+        'exercise': 'exercise_name',
+        'exercise_name': 'exercise_name',
+        'sätze': 'sets',
+        'sets': 'sets',
+        'wiederholungen': 'reps',
+        'reps': 'reps',
+        'gewicht': 'weight',
+        'weight': 'weight',
+        'notizen': 'notes',
+        'notes': 'notes'
+    }
+
+    # Extract and normalize the header
+    header_raw = [h.strip().lower() for h in table_lines[0].split('|')][1:-1] # [1:-1] to remove empty ends
+    header = [COLUMN_MAP.get(h, h) for h in header_raw]
     
-    for line in lines:
-        line = line.strip()
-        if line.startswith('**'):
-            match = re.match(r'\*\*(.*?):\*\*', line)
-            if match:
-                current_workout = match.group(1).strip()
-        elif line.startswith('-'):
-            exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
-            if exercise_match:
-                exercise_name = exercise_match.group(1).strip()
-                details = exercise_match.group(2).strip()
-                
-                sets, weight, reps, explanation = 3, 0.0, "10", ""
+    # Process the data rows (everything after the header and separator line)
+    workout_lines = table_lines[2:]
 
-                try:
-                    sets_match = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', details)
-                    if sets_match: sets = int(sets_match.group(1))
+    for line in workout_lines:
+        values = [v.strip() for v in line.split('|')][1:-1]
+        
+        if len(values) != len(header):
+            continue # Skip malformed rows
 
-                    weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
-                    if weight_match: weight = float(weight_match.group(1).replace(',', '.'))
+        row_dict = dict(zip(header, values))
+        
+        # --- CRITICAL: Add the auth_user_id to every single record! ---
+        row_dict['auth_user_id'] = auth_user_id
+        
+        # --- Data Type Conversion and Cleanup ---
+        # Convert 'sets' to integer
+        try:
+            row_dict['sets'] = int(row_dict.get('sets', 0))
+        except (ValueError, TypeError):
+            row_dict['sets'] = 0
+        
+        # Convert 'weight' to float, removing any "kg" etc.
+        try:
+            weight_str = re.sub(r'[^0-9.]', '', str(row_dict.get('weight', '0')))
+            row_dict['weight'] = float(weight_str) if weight_str else 0.0
+        except (ValueError, TypeError):
+            row_dict['weight'] = 0.0
+        
+        # Ensure 'reps' is a string
+        row_dict['reps'] = str(row_dict.get('reps', '0'))
 
-                    reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
-                    if reps_match: reps = reps_match.group(1).strip()
+        # Ensure 'notes' exists, even if empty
+        row_dict.setdefault('notes', '')
 
-                    explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
-                    if explanation_match: explanation = explanation_match.group(1).strip()
-
-                    for i in range(1, sets + 1):
-                        # --- KORREKTUR: Erstellt ein vollständiges Dictionary, das exakt zur DB-Tabelle passt ---
-                        rows.append({
-                            'uuid': user_data_uuid, 
-                            'date': current_date, 
-                            'name': user_name,
-                            'workout': current_workout,
-                            'exercise': exercise_name,
-                            'set': i, 
-                            'weight': weight,
-                            'reps': reps.split('-')[0] if '-' in str(reps) else reps,
-                            'unit': 'kg', 
-                            'type': '', 
-                            'completed': False,
-                            'messageToCoach': '', 
-                            'messageFromCoach': explanation,
-                            'rirSuggested': 0, 
-                            'rirDone': 0, 
-                            'generalStatementFrom': '', 
-                            'generalStatementTo': '',
-                            'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
-                            'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
-                        })
-                except Exception as e:
-                    st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")
-
-    # We don't need to return the explanation separately anymore
+        # Ensure all core fields for the new schema are present
+        final_row = {
+            'auth_user_id': row_dict['auth_user_id'],
+            'day': row_dict.get('day', 'Unbekannter Tag'),
+            'exercise_name': row_dict.get('exercise_name', 'Unbekannte Übung'),
+            'sets': row_dict.get('sets', 0),
+            'reps': row_dict.get('reps', '0'),
+            'weight': row_dict.get('weight', 0.0),
+            'notes': row_dict.get('notes', ''),
+            'completed_sets': 0 # Add a field to track progress
+        }
+        rows.append(final_row)
+    
     return rows
+
 
 def get_chat_response(history):
     """Sends the chat history to the AI and gets a contextual response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden. Bitte prüfe den API-Key."
 
+    # --- REVISED SYSTEM PROMPT ---
     system_prompt = {
         "role": "system",
         "content": """Du bist Milo, ein persönlicher KI-Coach. Deine Aufgabe ist es, mit dem Nutzer interaktiv einen Trainingsplan zu erstellen.
-        1. Wenn der Nutzer zum ersten Mal nach einem Plan fragt, erstelle einen vollständigen Plan basierend auf seinen Wünschen und den bereitgestellten Profildaten.
-        2. Wenn der Nutzer danach Änderungen vorschlägt (z.B. "ersetze Übung X"), passe den **letzten Plan, den du gesendet hast**, entsprechend an und sende den **kompletten, aktualisierten Plan** zurück.
-        3. Behalte immer deine freundliche, motivierende und kompetente Coach-Persönlichkeit bei.
-        4. Halte dich strikt an das Formatierungs-Schema für den Plan.
-        """
+1. Beginne IMMER mit einer kurzen, motivierenden Erklärung.
+2. Erstelle den Plan danach IMMER als Markdown-Tabelle.
+3. Die Tabelle MUSS die Spalten `Tag`, `Übung`, `Sätze`, `Wiederholungen`, `Gewicht`, und `Notizen` enthalten.
+4. Wenn der Nutzer Änderungen vorschlägt (z.B. "ersetze Übung X"), passe den letzten Plan an und sende den **kompletten, aktualisierten Plan** als neue Markdown-Tabelle zurück.
+5. Behalte immer deine freundliche, motivierende und kompetente Coach-Persönlichkeit bei.
+"""
     }
     
     messages_to_send = [system_prompt] + history

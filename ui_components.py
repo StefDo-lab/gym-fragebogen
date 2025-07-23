@@ -27,8 +27,24 @@ def inject_mobile_styles():
     </style>
     """, unsafe_allow_html=True)
 
+# --- HINZUGEFÜGT: Logo-Funktion ---
+def display_milo_logo():
+    """Displays the Coach Milo logo."""
+    # HINWEIS: Bitte die korrekte, öffentlich zugängliche URL für das Logo hier einfügen.
+    # Du erhältst sie, indem du auf GitHub auf die Bilddatei gehst,
+    # dann rechts auf den "Download"-Button klickst und "Link-Adresse kopieren" wählst.
+    logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true" 
+    try:
+        st.image(logo_url, width=120)
+    except Exception as e:
+        st.warning(f"Logo konnte nicht geladen werden. Bitte URL prüfen. Fehler: {e}")
+
+
 # --- Page Rendering Functions ---
 def display_login_page():
+    # Logo wird jetzt hier angezeigt
+    display_milo_logo()
+    
     st.title("Willkommen bei Coach Milo")
     st.info("Dein persönlicher KI-Coach, der dich wirklich versteht.")
     mode = st.radio("Wähle eine Option:", ["Einloggen", "Registrieren"], horizontal=True, label_visibility="collapsed")

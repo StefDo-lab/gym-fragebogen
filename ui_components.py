@@ -9,7 +9,8 @@ import pandas as pd
 import re
 from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data, 
-    load_user_workouts, update_workout_set
+    load_user_workouts, update_workout_set, add_set, delete_set,
+    delete_exercise, add_exercise, delete_workout
 )
 from ai_utils import get_chat_response, parse_ai_plan_to_rows
 
@@ -22,17 +23,11 @@ def inject_mobile_styles():
         footer {visibility: hidden;}
         header {visibility: hidden !important;}
         .block-container { padding-top: 1rem; }
-        /* Style for the headers */
-        .small-header {
-            font-weight: bold;
-            color: #555;
-            margin-bottom: -10px;
-        }
+        .small-header { font-weight: bold; color: #555; margin-bottom: -10px; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- Page Rendering Functions ---
-
 def display_login_page():
     st.title("Willkommen bei Coach Milo")
     st.info("Dein persönlicher KI-Coach, der dich wirklich versteht.")
@@ -64,34 +59,25 @@ def display_login_page():
                     st.error("Registrierung fehlgeschlagen. Ist die E-Mail schon vergeben?")
 
 def display_questionnaire_page():
-    # Hier den Code für den Fragebogen einfügen, falls benötigt
     st.header("Fragebogen")
     st.info("Dieser Bereich ist für den Fragebogen für neue Nutzer vorgesehen.")
-    st.warning("Bitte beachte: Die Logik für den Fragebogen muss noch hinzugefügt werden.")
-    # Beispiel-Button, um den Flow zu simulieren
     if st.button("Fragebogen (simuliert) abschicken"):
-        # Hier würde die Logik zum Speichern des Fragebogens stehen
-        # und st.session_state.user_profile würde mit den echten Daten gefüllt
-        st.session_state.user_profile = {"uuid": "simulated-uuid", "forename": "Test", "surename": "User", "email": "test@test.com"}
+        st.session_state.user_profile = {"uuid": str(uuid.uuid4()), "forename": "Test", "surename": "User", "email": "test@test.com"}
         st.success("Fragebogen gespeichert!")
         time.sleep(1)
         st.rerun()
-
 
 def render_chat_tab(user_profile):
     st.header("Planung mit Milo")
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen?"}]
-    
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-
     if prompt := st.chat_input("Was möchtest du trainieren?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
-
         with st.chat_message("assistant"):
             with st.spinner("Milo denkt nach..."):
                 full_prompt = f"Nutzerprofil: {user_profile}\n\nAnfrage: {prompt}"
@@ -100,156 +86,145 @@ def render_chat_tab(user_profile):
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.session_state.latest_plan_text = response
-
     if 'latest_plan_text' in st.session_state:
         st.divider()
         if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
             with st.spinner("Plan wird aktiviert..."):
                 new_rows = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_profile)
-
                 if not new_rows:
-                    st.error("Der Plan konnte nicht verarbeitet werden. Das KI-Format war unerwartet. Bitte versuche es erneut.")
+                    st.error("Der Plan konnte nicht verarbeitet werden.")
                 else:
-                    # --- KORRIGIERTE LOGIK: Manuelles Löschen und Einfügen ---
                     try:
-                        # 1. Alte Workouts laden
                         old_workouts = load_user_workouts(user_profile['uuid'])
-                        
-                        # 2. Alte Workouts einzeln löschen
                         for item in old_workouts:
                             supabase_auth_client.table("workouts").delete().eq("id", item['id']).execute()
-                        
-                        # 3. Neue Workouts einzeln einfügen
                         for row in new_rows:
                             supabase_auth_client.table("workouts").insert(row).execute()
-                        
-                        # Wenn alles geklappt hat:
                         st.success("Dein neuer Plan ist jetzt aktiv!")
                         st.balloons()
                         del st.session_state.messages
                         del st.session_state.latest_plan_text
                         time.sleep(1)
                         st.rerun()
-
                     except Exception as e:
                         st.error(f"Ein Fehler ist beim Aktivieren des Plans aufgetreten: {e}")
 
-
-def display_training_tab(user_profile_uuid: str):
+def display_training_tab(user_profile: dict):
     st.header("Dein aktueller Plan")
+    user_profile_uuid = user_profile['uuid']
+    user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
     workouts_data = load_user_workouts(user_profile_uuid)
 
     if not workouts_data:
-        st.info("Du hast noch keinen aktiven Trainingsplan. Erstelle einen neuen Plan im 'Chat mit Milo'-Tab!")
-        return
-    
-    df = pd.DataFrame(workouts_data)
-    
-    workout_order = df.groupby('workout').first().sort_values('id').index
-    
-    for workout_name in workout_order:
-        with st.expander(f"**{workout_name}**", expanded=True):
-            workout_group = df[df['workout'] == workout_name]
-            exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
-            
-            for exercise_name in exercise_order:
-                st.markdown(f"##### {exercise_name}")
-                exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values('set')
+        st.info("Du hast noch keinen aktiven Trainingsplan.")
+    else:
+        df = pd.DataFrame(workouts_data)
+        workout_order = df.groupby('workout').first().sort_values('id').index
+        
+        for workout_name in workout_order:
+            with st.expander(f"**{workout_name}**", expanded=True):
+                workout_group = df[df['workout'] == workout_name]
+                exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
                 
-                # --- HINZUGEFÜGT: Tipp von Milo ---
-                coach_msg = exercise_group.iloc[0]['messageFromCoach']
-                if coach_msg and coach_msg.strip():
-                    st.info(f"💡 Tipp von Milo: {coach_msg}")
+                for exercise_name in exercise_order:
+                    st.markdown(f"##### {exercise_name}")
+                    exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values('set')
+                    coach_msg = exercise_group.iloc[0]['messageFromCoach']
+                    if coach_msg and coach_msg.strip():
+                        st.info(f"💡 Tipp von Milo: {coach_msg}")
+                    header_cols = st.columns([1, 2, 2, 1, 2])
+                    with header_cols[1]: st.markdown("<p class='small-header'>Gewicht (kg)</p>", unsafe_allow_html=True)
+                    with header_cols[2]: st.markdown("<p class='small-header'>Wdh.</p>", unsafe_allow_html=True)
+                    with header_cols[3]: st.markdown("<p class='small-header'>RIR</p>", unsafe_allow_html=True)
 
-                # --- HINZUGEFÜGT: Spaltenüberschriften ---
-                header_cols = st.columns([1, 2, 2, 1, 2])
-                with header_cols[1]:
-                    st.markdown("<p class='small-header'>Gewicht (kg)</p>", unsafe_allow_html=True)
-                with header_cols[2]:
-                    st.markdown("<p class='small-header'>Wdh.</p>", unsafe_allow_html=True)
-                with header_cols[3]:
-                    st.markdown("<p class='small-header'>RIR</p>", unsafe_allow_html=True)
+                    for _, row in exercise_group.iterrows():
+                        cols = st.columns([1, 2, 2, 1, 2])
+                        with cols[0]: st.write(f"Satz {row['set']}")
+                        with cols[1]: new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
+                        with cols[2]:
+                            reps_str = str(row['reps']).split('-')[0]
+                            default_reps = int(re.search(r'\d+', reps_str).group()) if re.search(r'\d+', reps_str) else 10
+                            new_reps = st.number_input("Wdh", value=default_reps, key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
+                        with cols[3]: new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
+                        with cols[4]:
+                            if row['completed']:
+                                st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
+                            else:
+                                if st.button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
+                                    updates = {"weight": new_weight, "reps": str(new_reps), "rirDone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                                    if update_workout_set(row['id'], updates): st.rerun()
+                    
+                    # --- Satz- und Übungs-Verwaltung ---
+                    btn_cols = st.columns(3)
+                    with btn_cols[0]:
+                        if st.button("➕ Satz hinzufügen", key=f"add_set_{row['id']}"):
+                            last_set_data = exercise_group.iloc[-1].to_dict()
+                            new_set_number = int(last_set_data['set']) + 1
+                            last_set_data['set'] = new_set_number
+                            last_set_data['completed'] = False
+                            del last_set_data['id'] # ID wird von DB vergeben
+                            if add_set(last_set_data): st.rerun()
+                    with btn_cols[1]:
+                        if len(exercise_group) > 1 and st.button("➖ Letzten Satz löschen", key=f"del_set_{row['id']}"):
+                            last_set_id = exercise_group.iloc[-1]['id']
+                            if delete_set(last_set_id): st.rerun()
+                    with btn_cols[2]:
+                        if st.button("🗑️ Übung löschen", key=f"del_ex_{row['id']}"):
+                            if delete_exercise(exercise_group['id'].tolist()): st.rerun()
 
-                for _, row in exercise_group.iterrows():
-                    cols = st.columns([1, 2, 2, 1, 2])
-                    with cols[0]:
-                        st.write(f"Satz {row['set']}")
-                    with cols[1]:
-                        new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
-                    with cols[2]:
-                        reps_str = str(row['reps']).split('-')[0]
-                        default_reps = int(re.search(r'\d+', reps_str).group()) if re.search(r'\d+', reps_str) else 10
-                        new_reps = st.number_input("Wdh", value=default_reps, key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
-                    with cols[3]:
-                        new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
-                    with cols[4]:
-                        if row['completed']:
-                            st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
-                        else:
-                            if st.button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
-                                updates = {
-                                    "weight": new_weight, "reps": str(new_reps), "rirDone": new_rir,
-                                    "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                }
-                                if update_workout_set(row['id'], updates):
-                                    st.rerun()
-                
-                # --- HINZUGEFÜGT: Nachricht an Milo ---
-                with st.expander("💬 Nachricht an Milo"):
-                    current_message = exercise_group.iloc[0].get('messageToCoach', '')
-                    # Eindeutiger Key für die Text Area
-                    text_area_key = f"msg_area_{exercise_group.iloc[0]['id']}"
-                    
-                    message_to_coach = st.text_area(
-                        "Dein Feedback zur Übung",
-                        value=current_message,
-                        key=text_area_key,
-                        placeholder="z.B. Gewicht war zu leicht, Technik-Fragen, etc."
-                    )
-                    
-                    # Eindeutiger Key für den Button
-                    button_key = f"send_msg_btn_{exercise_group.iloc[0]['id']}"
-                    
-                    if st.button("Nachricht senden", key=button_key):
-                        success_count = 0
-                        # Update die Nachricht für alle Sätze dieser Übung
-                        for set_id in exercise_group['id']:
-                            if update_workout_set(set_id, {"messageToCoach": message_to_coach}):
-                                success_count += 1
-                        
-                        if success_count == len(exercise_group):
+                    with st.expander("💬 Nachricht an Milo"):
+                        message_to_coach = st.text_area("Dein Feedback zur Übung", value=row.get('messageToCoach', ''), key=f"msg_area_{row['id']}")
+                        if st.button("Nachricht senden", key=f"send_msg_btn_{row['id']}"):
+                            for set_id in exercise_group['id']:
+                                update_workout_set(set_id, {"messageToCoach": message_to_coach})
                             st.success("Nachricht gesendet!")
-                            # Kein st.rerun() hier, damit die Nachricht sichtbar bleibt
-                        else:
-                            st.error("Fehler beim Senden der Nachricht.")
 
-                st.divider()
+                    st.divider()
+
+                with st.expander("➕ Neue Übung zu diesem Workout hinzufügen"):
+                    with st.form(key=f"add_ex_form_{workout_name}"):
+                        ex_name = st.text_input("Übungsname")
+                        ex_cols = st.columns(3)
+                        ex_sets = ex_cols[0].number_input("Sätze", 1, 10, 3)
+                        ex_reps = ex_cols[1].text_input("Wdh.", "8-12")
+                        ex_weight = ex_cols[2].number_input("Gewicht (kg)", 0.0, 500.0, 0.0, 0.5)
+                        if st.form_submit_button("Hinzufügen"):
+                            new_ex_rows = []
+                            for i in range(1, ex_sets + 1):
+                                new_ex_rows.append({'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': workout_name, 'exercise': ex_name, 'set': i, 'weight': ex_weight, 'reps': ex_reps, 'completed': False})
+                            if add_exercise(new_ex_rows): st.rerun()
+                
+                if st.button("🗑️ Gesamtes Workout löschen", key=f"del_wo_{workout_name}"):
+                    if delete_workout(workout_group['id'].tolist()): st.rerun()
+
+    with st.expander("➕ Neues Workout erstellen"):
+        with st.form(key="add_workout_form"):
+            wo_name = st.text_input("Name des neuen Workouts")
+            if st.form_submit_button("Erstellen"):
+                # Erstellt ein leeres Workout, indem ein "Dummy"-Satz hinzugefügt wird
+                dummy_exercise = [{'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': wo_name, 'exercise': "Neue Übung", 'set': 1, 'weight': 0, 'reps': "10", 'completed': False}]
+                if add_exercise(dummy_exercise): st.rerun()
+
 
 def display_main_app_page(user_profile):
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
-    
     tab1, tab2, tab3, tab4 = st.tabs(["Training", "Chat mit Milo", "Stats", "Profil"])
-
     with tab1:
         if 'uuid' in user_profile:
-            display_training_tab(user_profile['uuid'])
+            display_training_tab(user_profile)
         else:
-            st.error("Fehler: Keine UUID im Nutzerprofil gefunden. Login-Prozess bitte überprüfen.")
-
+            st.error("Fehler: Keine UUID im Nutzerprofil gefunden.")
     with tab2:
         render_chat_tab(user_profile)
-
     with tab3:
         st.header("Deine Fortschritte")
         st.info("Dieser Bereich wird bald deine Trainingsstatistiken anzeigen.")
-    
     with tab4:
         st.header("Dein Profil")
         st.write(f"**Name:** {user_profile.get('forename', '')} {user_profile.get('surename', '')}")
         st.write(f"**E-Mail:** {user_profile.get('email', '')}")
         st.write(f"**Profil-UUID:** `{user_profile.get('uuid')}`")
         if st.button("Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+            for key in list(st.session_state.keys()): del st.session_state[key]
             supabase_auth_client.auth.sign_out()
             st.rerun()

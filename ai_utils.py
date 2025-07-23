@@ -40,7 +40,7 @@ def get_ai_prompt_template():
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
     Parses the AI-generated plan text into structured data for the database.
-    This version has a more robust workout title detection.
+    This version is more robust and fault-tolerant.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
@@ -51,26 +51,19 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
     lines = plan_text.split('\n')
     
-    plan_started = False
     for line in lines:
         line = line.strip()
         if not line:
             continue
         
-        # KORRIGIERT: Flexiblere Erkennung von Workout-Titeln.
-        # Erkennt "**Titel:**", "Titel:", "**Titel**" etc., aber keine Übungszeilen.
-        workout_match = re.match(r'^\s*(?:\*\*)?(.+?)(?:\*\*)?:?\s*$', line)
-        if workout_match and not line.startswith(('-', '* ')):
-            potential_title = workout_match.group(1).strip()
-            # Verhindert, dass eine lange Zeile als Titel erkannt wird
-            if len(potential_title.split()) < 5:
-                current_workout = potential_title
-                plan_started = True
-                continue
-        
-        if not plan_started:
+        # Match workout titles, which are typically bold and short.
+        # This is less strict and allows for more variations.
+        if line.startswith('**') and line.endswith('**') and len(line.split()) < 5:
+            current_workout = line.strip('*').strip(':').strip()
             continue
-
+        
+        # The most reliable indicator of an exercise is the leading dash or star.
+        # Everything else is ignored.
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip().strip('*')
@@ -85,6 +78,8 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
                 weight_match = re.search(r'(\d+[\.,]?\d*)\s*kg', details)
                 if weight_match: weight = float(weight_match.group(1).replace(',', '.'))
+                elif "körpergewicht" in details.lower() or "bw" in details.lower():
+                    weight = 0.0
 
                 reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match: reps_str_full = reps_match.group(1).strip()

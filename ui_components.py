@@ -29,7 +29,8 @@ def inject_mobile_styles():
 
 def display_milo_logo():
     """Displays the Coach Milo logo."""
-    logo_url = "https://raw.githubusercontent.com/StefDo-lab/gym-fragebogen/feature/coach-milo-makeover/logo-dark.png" 
+    # KORRIGIERT: URL wurde mit deinem Link aktualisiert
+    logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true" 
     try:
         st.image(logo_url, width=120)
     except Exception as e:
@@ -79,16 +80,23 @@ def display_questionnaire_page():
 
 def render_chat_tab(user_profile):
     st.header("Planung mit Milo")
+    logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true"
+
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen?"}]
+    
+    # KORRIGIERT: Zeigt das Logo als Avatar für den Assistenten an
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
+        avatar_icon = logo_url if message["role"] == "assistant" else "👤"
+        with st.chat_message(message["role"], avatar=avatar_icon):
             st.markdown(message["content"])
+
     if prompt := st.chat_input("Was möchtest du trainieren?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
-        with st.chat_message("assistant"):
+
+        with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
                 full_prompt = f"Nutzerprofil: {user_profile}\n\nAnfrage: {prompt}"
                 temp_history = [{"role": "user", "content": full_prompt}]
@@ -96,6 +104,7 @@ def render_chat_tab(user_profile):
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.session_state.latest_plan_text = response
+    
     if 'latest_plan_text' in st.session_state:
         st.divider()
         if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
@@ -152,7 +161,6 @@ def display_training_tab(user_profile: dict):
                         with cols[0]: st.write(f"Satz {row['set']}")
                         with cols[1]: new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
                         with cols[2]:
-                            # KORRIGIERT: Liest die Zahl direkt aus der DB, da sie jetzt ein Integer ist.
                             default_reps = int(row['reps'])
                             new_reps = st.number_input("Wdh", value=default_reps, key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
                         with cols[3]: new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
@@ -161,7 +169,6 @@ def display_training_tab(user_profile: dict):
                                 st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
                             else:
                                 if st.button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
-                                    # KORRIGIERT: Stellt sicher, dass `reps` als Zahl gespeichert wird.
                                     updates = {"weight": new_weight, "reps": new_reps, "rirDone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
                                     if update_workout_set(row['id'], updates): st.rerun()
                     
@@ -200,7 +207,6 @@ def display_training_tab(user_profile: dict):
                         ex_weight = ex_cols[2].number_input("Gewicht (kg)", 0.0, 500.0, 0.0, 0.5)
                         if st.form_submit_button("Hinzufügen"):
                             new_ex_rows = []
-                            # KORRIGIERT: Stellt sicher, dass `reps` als Zahl gespeichert wird.
                             reps_for_db = int(ex_reps_str.split('-')[0])
                             for i in range(1, ex_sets + 1):
                                 new_ex_rows.append({'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': workout_name, 'exercise': ex_name, 'set': i, 'weight': ex_weight, 'reps': reps_for_db, 'completed': False, 'messageFromCoach': f"Ziel: {ex_reps_str} Wdh."})

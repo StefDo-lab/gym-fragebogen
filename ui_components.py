@@ -27,13 +27,9 @@ def inject_mobile_styles():
     </style>
     """, unsafe_allow_html=True)
 
-# --- HINZUGEFÜGT: Logo-Funktion ---
 def display_milo_logo():
     """Displays the Coach Milo logo."""
-    # HINWEIS: Bitte die korrekte, öffentlich zugängliche URL für das Logo hier einfügen.
-    # Du erhältst sie, indem du auf GitHub auf die Bilddatei gehst,
-    # dann rechts auf den "Download"-Button klickst und "Link-Adresse kopieren" wählst.
-    logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true" 
+    logo_url = "https://raw.githubusercontent.com/StefDo-lab/gym-fragebogen/feature/coach-milo-makeover/logo-dark.png" 
     try:
         st.image(logo_url, width=120)
     except Exception as e:
@@ -42,9 +38,7 @@ def display_milo_logo():
 
 # --- Page Rendering Functions ---
 def display_login_page():
-    # Logo wird jetzt hier angezeigt
     display_milo_logo()
-    
     st.title("Willkommen bei Coach Milo")
     st.info("Dein persönlicher KI-Coach, der dich wirklich versteht.")
     mode = st.radio("Wähle eine Option:", ["Einloggen", "Registrieren"], horizontal=True, label_visibility="collapsed")
@@ -158,8 +152,8 @@ def display_training_tab(user_profile: dict):
                         with cols[0]: st.write(f"Satz {row['set']}")
                         with cols[1]: new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
                         with cols[2]:
-                            reps_str = str(row['reps']).split('-')[0]
-                            default_reps = int(re.search(r'\d+', reps_str).group()) if re.search(r'\d+', reps_str) else 10
+                            # KORRIGIERT: Liest die Zahl direkt aus der DB, da sie jetzt ein Integer ist.
+                            default_reps = int(row['reps'])
                             new_reps = st.number_input("Wdh", value=default_reps, key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
                         with cols[3]: new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
                         with cols[4]:
@@ -167,10 +161,10 @@ def display_training_tab(user_profile: dict):
                                 st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
                             else:
                                 if st.button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
-                                    updates = {"weight": new_weight, "reps": str(new_reps), "rirDone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                                    # KORRIGIERT: Stellt sicher, dass `reps` als Zahl gespeichert wird.
+                                    updates = {"weight": new_weight, "reps": new_reps, "rirDone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
                                     if update_workout_set(row['id'], updates): st.rerun()
                     
-                    # --- Satz- und Übungs-Verwaltung ---
                     btn_cols = st.columns(3)
                     with btn_cols[0]:
                         if st.button("➕ Satz hinzufügen", key=f"add_set_{row['id']}"):
@@ -178,7 +172,7 @@ def display_training_tab(user_profile: dict):
                             new_set_number = int(last_set_data['set']) + 1
                             last_set_data['set'] = new_set_number
                             last_set_data['completed'] = False
-                            del last_set_data['id'] # ID wird von DB vergeben
+                            del last_set_data['id']
                             if add_set(last_set_data): st.rerun()
                     with btn_cols[1]:
                         if len(exercise_group) > 1 and st.button("➖ Letzten Satz löschen", key=f"del_set_{row['id']}"):
@@ -202,12 +196,14 @@ def display_training_tab(user_profile: dict):
                         ex_name = st.text_input("Übungsname")
                         ex_cols = st.columns(3)
                         ex_sets = ex_cols[0].number_input("Sätze", 1, 10, 3)
-                        ex_reps = ex_cols[1].text_input("Wdh.", "8-12")
+                        ex_reps_str = ex_cols[1].text_input("Wdh.", "8-12")
                         ex_weight = ex_cols[2].number_input("Gewicht (kg)", 0.0, 500.0, 0.0, 0.5)
                         if st.form_submit_button("Hinzufügen"):
                             new_ex_rows = []
+                            # KORRIGIERT: Stellt sicher, dass `reps` als Zahl gespeichert wird.
+                            reps_for_db = int(ex_reps_str.split('-')[0])
                             for i in range(1, ex_sets + 1):
-                                new_ex_rows.append({'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': workout_name, 'exercise': ex_name, 'set': i, 'weight': ex_weight, 'reps': ex_reps, 'completed': False})
+                                new_ex_rows.append({'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': workout_name, 'exercise': ex_name, 'set': i, 'weight': ex_weight, 'reps': reps_for_db, 'completed': False, 'messageFromCoach': f"Ziel: {ex_reps_str} Wdh."})
                             if add_exercise(new_ex_rows): st.rerun()
                 
                 if st.button("🗑️ Gesamtes Workout löschen", key=f"del_wo_{workout_name}"):
@@ -217,8 +213,7 @@ def display_training_tab(user_profile: dict):
         with st.form(key="add_workout_form"):
             wo_name = st.text_input("Name des neuen Workouts")
             if st.form_submit_button("Erstellen"):
-                # Erstellt ein leeres Workout, indem ein "Dummy"-Satz hinzugefügt wird
-                dummy_exercise = [{'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': wo_name, 'exercise': "Neue Übung", 'set': 1, 'weight': 0, 'reps': "10", 'completed': False}]
+                dummy_exercise = [{'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': wo_name, 'exercise': "Neue Übung", 'set': 1, 'weight': 0, 'reps': 10, 'completed': False}]
                 if add_exercise(dummy_exercise): st.rerun()
 
 

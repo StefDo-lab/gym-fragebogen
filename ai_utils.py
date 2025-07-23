@@ -27,15 +27,13 @@ ai_client = init_openai_client()
 
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
-    Parses the AI-generated plan text into structured data for the database,
-    based on the proven logic from the working monolithic file.
-    It creates one row PER SET.
+    Parses the AI-generated plan text into structured data for the database.
+    It creates one row PER SET and handles data types correctly.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
     current_workout = "Unbenanntes Workout"
     
-    # Get user identifiers from the profile dictionary
     user_uuid = user_profile.get("uuid")
     user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
 
@@ -46,25 +44,20 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # KORRIGIERT: Flexiblere Erkennung des Workout-Namens (Doppelpunkt ist optional)
-        # Verhindert auch, dass eine Übung fälschlicherweise als Workout-Name erkannt wird.
         workout_match = re.match(r'^\*\*(.+?):?\*\*', line)
         if workout_match and ":" not in workout_match.group(1):
             current_workout = workout_match.group(1).strip()
             continue
         
-        # Match exercise lines like "- Exercise: 3 Sätze, 8-10 Wdh, 60 kg (Fokus: ...)"
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
-            # KORRIGIERT: Bereinige den Übungsnamen von Markdown-Sternchen
             exercise_name = exercise_match.group(1).strip().strip('*')
             details = exercise_match.group(2).strip()
             
             try:
-                # Default values
-                sets, weight, reps, explanation = 3, 0.0, "10", ""
+                sets, weight, explanation = 3, 0.0, ""
+                reps_str_full = "10" # Default full string for reps, e.g., "8-12"
                 
-                # Parse details using regex
                 sets_match = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', details)
                 if sets_match: sets = int(sets_match.group(1))
 
@@ -72,14 +65,19 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                 if weight_match: weight = float(weight_match.group(1).replace(',', '.'))
 
                 reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
-                if reps_match: reps = reps_match.group(1).strip()
+                if reps_match: reps_str_full = reps_match.group(1).strip()
 
                 explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                 if explanation_match: explanation = explanation_match.group(1).strip()
 
-                # Create one row for each set
+                # KORRIGIERT: Konvertiere den Reps-String in eine Zahl für die Datenbank
+                # Nimmt die erste Zahl aus einem Bereich (z.B. "8-10" -> 8)
+                reps_for_db = int(re.split(r'\s*-\s*', reps_str_full)[0])
+
+                # KORRIGIERT: Kombiniere Ziel-Reps und Erklärung für die Coach-Nachricht
+                full_coach_message = f"Ziel: {reps_str_full} Wdh. {explanation}".strip()
+
                 for i in range(1, sets + 1):
-                    # This dictionary structure MUST EXACTLY match the Supabase table
                     rows.append({
                         'uuid': user_uuid, 
                         'date': current_date, 
@@ -88,12 +86,12 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                         'exercise': exercise_name,
                         'set': i, 
                         'weight': weight,
-                        'reps': reps, # Store the target reps string (e.g., "8-12")
+                        'reps': reps_for_db, # Speichert eine saubere Zahl (Integer)
                         'unit': 'kg', 
                         'type': '', 
                         'completed': False,
                         'messageToCoach': '', 
-                        'messageFromCoach': explanation,
+                        'messageFromCoach': full_coach_message, # Speichert den vollen Rep-Bereich
                         'rirSuggested': 0, 
                         'rirDone': 0, 
                         'generalStatementFrom': '', 

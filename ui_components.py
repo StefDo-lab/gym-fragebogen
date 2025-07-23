@@ -22,6 +22,12 @@ def inject_mobile_styles():
         footer {visibility: hidden;}
         header {visibility: hidden !important;}
         .block-container { padding-top: 1rem; }
+        /* Style for the headers */
+        .small-header {
+            font-weight: bold;
+            color: #555;
+            margin-bottom: -10px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -139,19 +145,31 @@ def display_training_tab(user_profile_uuid: str):
     
     df = pd.DataFrame(workouts_data)
     
-    # Gruppiere nach Workout, behalte aber die Reihenfolge bei
     workout_order = df.groupby('workout').first().sort_values('id').index
     
     for workout_name in workout_order:
         with st.expander(f"**{workout_name}**", expanded=True):
             workout_group = df[df['workout'] == workout_name]
-            # Gruppiere nach Übung, behalte aber die Reihenfolge bei
             exercise_order = workout_group.groupby('exercise').first().sort_values('id').index
             
             for exercise_name in exercise_order:
                 st.markdown(f"##### {exercise_name}")
                 exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values('set')
                 
+                # --- HINZUGEFÜGT: Tipp von Milo ---
+                coach_msg = exercise_group.iloc[0]['messageFromCoach']
+                if coach_msg and coach_msg.strip():
+                    st.info(f"💡 Tipp von Milo: {coach_msg}")
+
+                # --- HINZUGEFÜGT: Spaltenüberschriften ---
+                header_cols = st.columns([1, 2, 2, 1, 2])
+                with header_cols[1]:
+                    st.markdown("<p class='small-header'>Gewicht (kg)</p>", unsafe_allow_html=True)
+                with header_cols[2]:
+                    st.markdown("<p class='small-header'>Wdh.</p>", unsafe_allow_html=True)
+                with header_cols[3]:
+                    st.markdown("<p class='small-header'>RIR</p>", unsafe_allow_html=True)
+
                 for _, row in exercise_group.iterrows():
                     cols = st.columns([1, 2, 2, 1, 2])
                     with cols[0]:
@@ -175,12 +193,41 @@ def display_training_tab(user_profile_uuid: str):
                                 }
                                 if update_workout_set(row['id'], updates):
                                     st.rerun()
+                
+                # --- HINZUGEFÜGT: Nachricht an Milo ---
+                with st.expander("💬 Nachricht an Milo"):
+                    current_message = exercise_group.iloc[0].get('messageToCoach', '')
+                    # Eindeutiger Key für die Text Area
+                    text_area_key = f"msg_area_{exercise_group.iloc[0]['id']}"
+                    
+                    message_to_coach = st.text_area(
+                        "Dein Feedback zur Übung",
+                        value=current_message,
+                        key=text_area_key,
+                        placeholder="z.B. Gewicht war zu leicht, Technik-Fragen, etc."
+                    )
+                    
+                    # Eindeutiger Key für den Button
+                    button_key = f"send_msg_btn_{exercise_group.iloc[0]['id']}"
+                    
+                    if st.button("Nachricht senden", key=button_key):
+                        success_count = 0
+                        # Update die Nachricht für alle Sätze dieser Übung
+                        for set_id in exercise_group['id']:
+                            if update_workout_set(set_id, {"messageToCoach": message_to_coach}):
+                                success_count += 1
+                        
+                        if success_count == len(exercise_group):
+                            st.success("Nachricht gesendet!")
+                            # Kein st.rerun() hier, damit die Nachricht sichtbar bleibt
+                        else:
+                            st.error("Fehler beim Senden der Nachricht.")
+
                 st.divider()
 
 def display_main_app_page(user_profile):
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
-    # KORRIGIERTE TAB-NAMEN
     tab1, tab2, tab3, tab4 = st.tabs(["Training", "Chat mit Milo", "Stats", "Profil"])
 
     with tab1:
@@ -190,7 +237,6 @@ def display_main_app_page(user_profile):
             st.error("Fehler: Keine UUID im Nutzerprofil gefunden. Login-Prozess bitte überprüfen.")
 
     with tab2:
-        # Die Chat-Funktion wird jetzt hier aufgerufen
         render_chat_tab(user_profile)
 
     with tab3:

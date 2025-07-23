@@ -10,9 +10,14 @@ from supabase import create_client
 @st.cache_resource
 def init_supabase_client():
     """Initializes and returns the Supabase client for authentication."""
-    url = st.secrets["supabase_url"]
-    # The 'anon' key is used for user authentication (Login/Register)
-    anon_key = st.secrets["supabase_key"]
+    # --- KORREKTUR: Sicherer Zugriff auf Secrets ---
+    url = st.secrets.get("supabase_url")
+    anon_key = st.secrets.get("supabase_key")
+
+    if not url or not anon_key:
+        st.error("Supabase URL oder Anon Key sind nicht in den Secrets konfiguriert.")
+        st.stop()
+        
     return create_client(url, anon_key)
 
 # This is the client for handling user login, registration, etc.
@@ -21,15 +26,21 @@ supabase_auth_client = init_supabase_client()
 # --- Generic Database Functions using the Service Role Key for elevated privileges ---
 def _get_service_headers():
     """Returns the authorization headers required for admin-level access."""
+    # --- KORREKTUR: Sicherer Zugriff auf Secrets ---
+    service_key = st.secrets.get("supabase_service_role_key")
+    if not service_key:
+        st.error("Supabase Service Role Key ist nicht in den Secrets konfiguriert.")
+        st.stop()
+
     return {
-        "apikey": st.secrets["supabase_service_role_key"],
-        "Authorization": f'Bearer {st.secrets["supabase_service_role_key"]}',
+        "apikey": service_key,
+        "Authorization": f'Bearer {service_key}',
         "Content-Type": "application/json"
     }
 
 def get_data(table, filters=None):
     """Fetches data from a specified table."""
-    url = f'{st.secrets["supabase_url"]}/rest/v1/{table}'
+    url = f'{st.secrets.get("supabase_url")}/rest/v1/{table}'
     if filters:
         url += f"?{filters}"
     
@@ -42,19 +53,19 @@ def get_data(table, filters=None):
 
 def insert_data(table, data):
     """Inserts data into a specified table."""
-    url = f'{st.secrets["supabase_url"]}/rest/v1/{table}'
+    url = f'{st.secrets.get("supabase_url")}/rest/v1/{table}'
     response = requests.post(url, headers=_get_service_headers(), json=data)
     return response
 
 def update_data(table, updates, filter_column, filter_value):
     """Updates data in a specified table based on a filter."""
-    url = f'{st.secrets["supabase_url"]}/rest/v1/{table}?{filter_column}=eq.{filter_value}'
+    url = f'{st.secrets.get("supabase_url")}/rest/v1/{table}?{filter_column}=eq.{filter_value}'
     response = requests.patch(url, headers=_get_service_headers(), json=updates)
     return response.status_code in [200, 204]
 
 def delete_data(table, filter_column, filter_value):
     """Deletes data from a specified table based on a filter."""
-    url = f'{st.secrets["supabase_url"]}/rest/v1/{table}?{filter_column}=eq.{filter_value}'
+    url = f'{st.secrets.get("supabase_url")}/rest/v1/{table}?{filter_column}=eq.{filter_value}'
     response = requests.delete(url, headers=_get_service_headers())
     return response.status_code in [200, 204]
 

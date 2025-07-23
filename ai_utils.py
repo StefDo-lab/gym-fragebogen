@@ -40,11 +40,11 @@ def get_ai_prompt_template():
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
     Parses the AI-generated plan text into structured data for the database.
-    This version is more robust and fault-tolerant.
+    This is the most robust version, inspired by the original working code.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = "Unbenanntes Workout"
+    current_workout = "Trainingsplan" # A better default name
     
     user_uuid = user_profile.get("uuid")
     user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
@@ -56,17 +56,27 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # Match workout titles, which are typically bold and short.
-        # This is less strict and allows for more variations.
-        if line.startswith('**') and line.endswith('**') and len(line.split()) < 5:
-            current_workout = line.strip('*').strip(':').strip()
+        # Flexible workout title detection. A line is a title if it's short,
+        # ends with a colon or is bold, but is NOT an exercise line.
+        is_title = False
+        # Regex to detect various list markers (-, *, 1., etc.)
+        is_exercise_marker = re.match(r'^\s*(?:[-*]|\d+\.)', line)
+
+        if not is_exercise_marker and len(line.split()) < 5:
+            if line.endswith(':'):
+                current_workout = line.strip(':* ')
+                is_title = True
+            elif line.startswith('**') and line.endswith('**'):
+                current_workout = line.strip(':* ')
+                is_title = True
+
+        if is_title:
             continue
-        
-        # The most reliable indicator of an exercise is the leading dash or star.
-        # Everything else is ignored.
-        exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
+
+        # Flexible exercise detection (handles '-', '*', and '1.' lists)
+        exercise_match = re.match(r'^\s*(?:[-*]|\d+\.)\s*(.+?):\s*(.*)', line)
         if exercise_match:
-            exercise_name = exercise_match.group(1).strip().strip('*')
+            exercise_name = exercise_match.group(1).strip()
             details = exercise_match.group(2).strip()
             
             try:

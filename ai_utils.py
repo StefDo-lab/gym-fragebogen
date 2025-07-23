@@ -40,6 +40,7 @@ def get_ai_prompt_template():
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
     Parses the AI-generated plan text into structured data for the database.
+    This version has a more robust workout title detection.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
@@ -56,10 +57,16 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        if line.startswith('**') and line.endswith('**'):
-            current_workout = line.strip('*').strip(':').strip()
-            plan_started = True
-            continue
+        # KORRIGIERT: Flexiblere Erkennung von Workout-Titeln.
+        # Erkennt "**Titel:**", "Titel:", "**Titel**" etc., aber keine Übungszeilen.
+        workout_match = re.match(r'^\s*(?:\*\*)?(.+?)(?:\*\*)?:?\s*$', line)
+        if workout_match and not line.startswith(('-', '* ')):
+            potential_title = workout_match.group(1).strip()
+            # Verhindert, dass eine lange Zeile als Titel erkannt wird
+            if len(potential_title.split()) < 5:
+                current_workout = potential_title
+                plan_started = True
+                continue
         
         if not plan_started:
             continue
@@ -110,14 +117,12 @@ def get_chat_response(messages: list, user_profile: dict, history_analysis: str,
 
     prompt_template = get_ai_prompt_template()
     
-    # Letzte User-Nachricht für das Template extrahieren
     last_user_request = ""
     for msg in reversed(messages):
         if msg["role"] == "user":
             last_user_request = msg["content"]
             break
 
-    # Platzhalter im Template füllen
     system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis=history_analysis,
@@ -129,7 +134,6 @@ def get_chat_response(messages: list, user_profile: dict, history_analysis: str,
         user_request=last_user_request
     )
 
-    # System-Prompt und Konversationsverlauf kombinieren
     messages_to_send = [{"role": "system", "content": system_prompt_content}] + messages
 
     try:

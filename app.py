@@ -25,7 +25,7 @@ def main():
     Controls the app's flow based on user's login status and
     questionnaire completion.
     """
-    # Initialize session state if keys don't exist
+    # Initialize session state keys if they don't exist
     if "user" not in st.session_state:
         st.session_state.user = None
     if "user_profile" not in st.session_state:
@@ -33,30 +33,30 @@ def main():
 
     # --- FLOW CONTROL ---
 
-    # 1. If user is not logged in, show login page.
+    # 1. If user is not logged in, show the login page.
     if not st.session_state.user:
         display_login_page()
         return
 
     # 2. If user is logged in, but we haven't checked for a profile yet.
+    # This runs once after login to fetch the user's profile data.
     if st.session_state.user and st.session_state.user_profile is None:
         with st.spinner("Lade dein Profil..."):
             profile_exists, profile_data = check_user_profile_exists(st.session_state.user.id)
             if profile_exists:
-                # Profile found, store it in session state and rerun to show main app.
+                # Profile found, store it in session state and rerun.
                 st.session_state.user_profile = profile_data
                 st.rerun()
             else:
-                # No profile found, mark it as such so we show the questionnaire.
-                # We use a specific value to prevent re-checking the DB.
+                # No profile found, mark it to show the questionnaire.
                 st.session_state.user_profile = "NO_PROFILE_FOUND"
                 st.rerun()
     
-    # 3. If we've checked and found a profile, show the main app.
+    # 3. If a profile was found (it's a dictionary), show the main app.
     if isinstance(st.session_state.user_profile, dict):
         display_main_app_page(st.session_state.user_profile)
     
-    # 4. If we've checked and found no profile, show the questionnaire.
+    # 4. If no profile was found, show the questionnaire page.
     elif st.session_state.user_profile == "NO_PROFILE_FOUND":
         display_questionnaire_page()
 

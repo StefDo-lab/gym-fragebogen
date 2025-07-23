@@ -25,6 +25,7 @@ supabase_auth_client = init_supabase_client()
 def check_user_profile_exists(auth_user_id: str):
     """
     Checks if a questionnaire profile exists for a given auth user ID.
+    This is the bridge between the auth user and their data profile.
     Returns a tuple: (exists: bool, profile_data: dict | None)
     """
     try:
@@ -63,9 +64,11 @@ def load_user_workouts(user_profile_uuid: str) -> list:
         st.error(f"Fehler beim Laden der Workouts: {e}")
         return []
 
-def replace_user_workouts(user_profile_uuid: str, new_workouts: list) -> APIResponse:
+def replace_user_workouts(user_profile_uuid: str, new_workouts: list) -> bool:
     """
-    Atomically replaces all workouts for a user using their profile UUID.
+    Atomically replaces all workouts for a user.
+    First deletes all existing workouts, then inserts the new ones.
+    This is the core function for 'activating' a new plan.
     """
     try:
         # Step 1: Delete all existing workouts for the user
@@ -77,12 +80,15 @@ def replace_user_workouts(user_profile_uuid: str, new_workouts: list) -> APIResp
         # Step 2: Insert the new list of workouts (if any)
         if new_workouts:
             response = supabase_auth_client.table("workouts").insert(new_workouts).execute()
-            return response
-        return True # Return success if there was nothing to add
+            # Check if the insert was successful
+            if not response.data:
+                st.error(f"Fehler beim Einfügen der neuen Workouts: {response.error.message if response.error else 'Unbekannter Fehler'}")
+                return False
+        return True
             
     except Exception as e:
         st.error(f"Fehler beim Ersetzen der Workouts: {e}")
-        return None
+        return False
 
 def update_workout_set(set_id: int, updates: dict) -> bool:
     """Updates a single completed set in the database."""

@@ -4,6 +4,7 @@
 import streamlit as st
 import re
 from openai import OpenAI
+import datetime
 
 # --- OpenAI Client Initialization ---
 @st.cache_resource
@@ -24,97 +25,93 @@ ai_client = init_openai_client()
 
 # --- AI Prompt and Plan Parsing Functions ---
 
-def parse_ai_plan_to_rows(ai_response_text: str, auth_user_id: str) -> list:
+def parse_ai_plan_to_rows(plan_text: str, user_profile: dict) -> list:
     """
-    Parses a Markdown table from the AI's response into a list of dictionaries
-    ready for Supabase insertion into the 'workouts' table.
+    Parses the AI-generated plan text (Markdown table) into structured data for the database.
+    This version creates one row PER SET, matching the original database schema.
     """
     rows = []
-    # Find all lines that look like Markdown table rows (surrounded by |)
-    table_lines = [line.strip() for line in ai_response_text.split('\n') if line.strip().startswith('|') and line.strip().endswith('|')]
-    
-    if len(table_lines) < 3:
-        # If no table is found, we cannot proceed.
+    current_date = datetime.date.today().isoformat()
+    user_data_uuid = user_profile.get("uuid")
+    user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
+
+    # Regex to find Markdown table rows
+    lines = plan_text.split('\n')
+    table_lines = [line for line in lines if '|' in line and not line.startswith('---')]
+
+    if len(table_lines) < 2:
+        st.error("Keine gültige Markdown-Tabelle im KI-Output gefunden.")
         return []
 
-    # --- Column Name Mapping ---
-    # Maps possible German/English names to the exact DB column names
-    COLUMN_MAP = {
-        'tag': 'day',
-        'day': 'day',
-        'übung': 'exercise_name',
-        'exercise': 'exercise_name',
-        'exercise_name': 'exercise_name',
-        'sätze': 'sets',
-        'sets': 'sets',
-        'wiederholungen': 'reps',
-        'reps': 'reps',
-        'gewicht': 'weight',
-        'weight': 'weight',
-        'notizen': 'notes',
-        'notes': 'notes'
-    }
-
-    # Extract and normalize the header
-    header_raw = [h.strip().lower() for h in table_lines[0].split('|')][1:-1] # [1:-1] to remove empty ends
-    header = [COLUMN_MAP.get(h, h) for h in header_raw]
-    
-    # Process the data rows (everything after the header and separator line)
-    workout_lines = table_lines[2:]
-
-    for line in workout_lines:
-        values = [v.strip() for v in line.split('|')][1:-1]
-        
-        if len(values) != len(header):
-            continue # Skip malformed rows
-
-        row_dict = dict(zip(header, values))
-        
-        # --- CRITICAL: Add the auth_user_id to every single record! ---
-        row_dict['auth_user_id'] = auth_user_id
-        
-        # --- Data Type Conversion and Cleanup ---
-        # Convert 'sets' to integer
-        try:
-            row_dict['sets'] = int(row_dict.get('sets', 0))
-        except (ValueError, TypeError):
-            row_dict['sets'] = 0
-        
-        # Convert 'weight' to float, removing any "kg" etc.
-        try:
-            weight_str = re.sub(r'[^0-9.]', '', str(row_dict.get('weight', '0')))
-            row_dict['weight'] = float(weight_str) if weight_str else 0.0
-        except (ValueError, TypeError):
-            row_dict['weight'] = 0.0
-        
-        # Ensure 'reps' is a string
-        row_dict['reps'] = str(row_dict.get('reps', '0'))
-
-        # Ensure 'notes' exists, even if empty
-        row_dict.setdefault('notes', '')
-
-        # Ensure all core fields for the new schema are present
-        final_row = {
-            'auth_user_id': row_dict['auth_user_id'],
-            'day': row_dict.get('day', 'Unbekannter Tag'),
-            'exercise_name': row_dict.get('exercise_name', 'Unbekannte Übung'),
-            'sets': row_dict.get('sets', 0),
-            'reps': row_dict.get('reps', '0'),
-            'weight': row_dict.get('weight', 0.0),
-            'notes': row_dict.get('notes', ''),
-            'completed_sets': 0 # Add a field to track progress
+    # Dynamically find column indices from header
+    header = [h.strip().lower() for h in table_lines[0].split('|')]
+    try:
+        # Map headers to the keys we need, allowing for variations
+        col_map = {
+            'tag': header.index('tag'),
+            'übung': header.index('übung'),
+            'sätze': header.index('sätze'),
+            'wiederholungen': header.index('wiederholungen'),
+            'gewicht': header.index('gewicht'),
+            'notizen': header.index('notizen'),
         }
-        rows.append(final_row)
-    
-    return rows
+    except ValueError as e:
+        st.error(f"Fehlende Spalte im Tabellenkopf: {e}. Die Tabelle muss 'Tag', 'Übung', 'Sätze', 'Wiederholungen', 'Gewicht' und 'Notizen' enthalten.")
+        return []
 
+    # Process each data row (skipping the header)
+    for line in table_lines[1:]:
+        parts = [p.strip() for p in line.split('|')]
+        if len(parts) < len(header):
+            continue
+
+        try:
+            day = parts[col_map['tag']]
+            exercise_name = parts[col_map['übung']]
+            sets_str = parts[col_map['sätze']]
+            reps_str = parts[col_map['wiederholungen']]
+            weight_str = parts[col_map['gewicht']]
+            notes = parts[col_map['notizen']]
+
+            # Extract numbers from strings
+            sets = int(re.search(r'\d+', sets_str).group()) if re.search(r'\d+', sets_str) else 0
+            weight_val_str = re.search(r'(\d+[\.,]?\d*)', weight_str)
+            weight = float(weight_val_str.group(1).replace(',', '.')) if weight_val_str else 0.0
+
+            # Create one row for each set
+            for i in range(1, sets + 1):
+                rows.append({
+                    'uuid': user_data_uuid, 
+                    'date': current_date, 
+                    'name': user_name,
+                    'workout': day, # Use the 'Tag' as the workout name
+                    'exercise': exercise_name,
+                    'set': i, 
+                    'weight': weight,
+                    'reps': reps_str, # Store the target reps string (e.g., "8-12")
+                    'unit': 'kg', 
+                    'type': '', 
+                    'completed': False, # This is the crucial flag
+                    'messageToCoach': '', 
+                    'messageFromCoach': notes, # Store notes here
+                    'rirSuggested': 0, 
+                    'rirDone': 0,
+                    # Add all dummy columns to match the table schema exactly
+                    'generalStatementFrom': '', 'generalStatementTo': '',
+                    'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
+                    'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
+                })
+        except (ValueError, TypeError, IndexError) as e:
+            st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")
+            continue
+            
+    return rows
 
 def get_chat_response(history):
     """Sends the chat history to the AI and gets a contextual response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden. Bitte prüfe den API-Key."
 
-    # --- REVISED SYSTEM PROMPT ---
     system_prompt = {
         "role": "system",
         "content": """Du bist Milo, ein persönlicher KI-Coach. Deine Aufgabe ist es, mit dem Nutzer interaktiv einen Trainingsplan zu erstellen.

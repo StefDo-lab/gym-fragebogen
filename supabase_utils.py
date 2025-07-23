@@ -3,6 +3,7 @@
 
 import streamlit as st
 from supabase import create_client, Client
+from postgrest import APIResponse
 
 # --- Supabase Client Initialization ---
 @st.cache_resource
@@ -41,7 +42,7 @@ def check_user_profile_exists(auth_user_id: str):
         st.error(f"Fehler bei der Profilprüfung: {e}")
         return False, None
 
-def insert_questionnaire_data(data: dict):
+def insert_questionnaire_data(data: dict) -> APIResponse:
     """Inserts the questionnaire data for a new user."""
     try:
         return supabase_auth_client.table("questionaire").insert(data).execute()
@@ -49,43 +50,41 @@ def insert_questionnaire_data(data: dict):
         st.error(f"Fehler beim Speichern des Fragebogens: {e}")
         return None
 
-def load_user_workouts(auth_user_id: str):
-    """Loads all current workout exercises for a user, ordered by day and creation."""
+def load_user_workouts(user_profile_uuid: str) -> list:
+    """Loads all current workout sets for a user, using the profile UUID."""
     try:
         response = supabase_auth_client.table("workouts") \
             .select("*") \
-            .eq("auth_user_id", auth_user_id) \
-            .order("day", desc=False) \
-            .order("created_at", desc=False) \
+            .eq("uuid", user_profile_uuid) \
+            .order("id", desc=False) \
             .execute()
         return response.data if response.data else []
     except Exception as e:
         st.error(f"Fehler beim Laden der Workouts: {e}")
         return []
 
-def replace_user_workouts(auth_user_id: str, new_workouts: list):
+def replace_user_workouts(user_profile_uuid: str, new_workouts: list) -> APIResponse:
     """
-    Atomically replaces all workouts for a user.
-    First deletes all existing workouts, then inserts the new ones.
+    Atomically replaces all workouts for a user using their profile UUID.
     """
     try:
         # Step 1: Delete all existing workouts for the user
         supabase_auth_client.table("workouts") \
             .delete() \
-            .eq("auth_user_id", auth_user_id) \
+            .eq("uuid", user_profile_uuid) \
             .execute()
             
-        # Step 2: Insert the new list of workouts
+        # Step 2: Insert the new list of workouts (if any)
         if new_workouts:
             response = supabase_auth_client.table("workouts").insert(new_workouts).execute()
             return response
-        return True # Return success if there were no new workouts to add
+        return True # Return success if there was nothing to add
             
     except Exception as e:
         st.error(f"Fehler beim Ersetzen der Workouts: {e}")
         return None
 
-def update_workout_set(set_id: int, updates: dict):
+def update_workout_set(set_id: int, updates: dict) -> bool:
     """Updates a single completed set in the database."""
     try:
         supabase_auth_client.table("workouts") \

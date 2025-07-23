@@ -109,6 +109,10 @@ def display_questionnaire_page():
         ])
         goalDetail = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
+        st.subheader("Medizinische Fragen")
+        surgery = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
+        surgeryDetails = st.text_area("Details zur OP", key="surgery_details")
+        
         # ... (Add all other medical questions from your original questionnaire here) ...
 
         dsgvo = st.checkbox("Ich stimme der DSGVO-Einwilligung zu *")
@@ -135,6 +139,8 @@ def display_questionnaire_page():
                     "experience": experience,
                     "goals": "; ".join(goals),
                     "goalDetail": goalDetail,
+                    "surgery": surgery,
+                    "surgeryDetails": surgeryDetails,
                     # ... (add all other fields to the payload) ...
                 }
                 response = insert_data("questionaire", data_payload)
@@ -194,18 +200,15 @@ AKTUELLE ANFRAGE DES NUTZERS:
                 user_data_uuid = user_profile.get("uuid")
                 user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
                 
-                # 1. Parse the plan
                 new_rows, _ = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_data_uuid, user_name)
                 
                 if not new_rows:
                     st.error("Der Plan konnte nicht verarbeitet werden. Bitte versuche es erneut.")
                 else:
-                    # 2. Delete old workouts
                     old_workouts = load_user_workouts(user_data_uuid)
                     for item in old_workouts:
                         delete_data("workouts", "id", item['id'])
                     
-                    # 3. Insert new workouts
                     success_count = 0
                     for row in new_rows:
                         response = insert_data("workouts", row)
@@ -215,7 +218,6 @@ AKTUELLE ANFRAGE DES NUTZERS:
                     if success_count == len(new_rows):
                         st.success("Dein neuer Plan ist jetzt aktiv!")
                         st.balloons()
-                        # Clean up session state
                         del st.session_state.messages
                         del st.session_state.latest_plan_text
                         time.sleep(2)
@@ -238,7 +240,7 @@ def display_main_app_page(user_profile):
             st.info("Du hast noch keine aktiven Workouts. Erstelle einen neuen Plan im 'Chat mit Milo'-Tab!")
         else:
             df = pd.DataFrame(workouts_data)
-            df = df.sort_values(by=['id']) # Ensure order
+            df = df.sort_values(by=['id'])
             
             for workout_name in df['workout'].unique():
                 with st.expander(f"**{workout_name}**", expanded=True):

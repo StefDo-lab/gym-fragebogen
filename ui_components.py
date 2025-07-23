@@ -9,7 +9,7 @@ import pandas as pd
 import re
 from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data, 
-    load_user_workouts, replace_user_workouts, update_workout_set
+    load_user_workouts, update_workout_set
 )
 from ai_utils import get_chat_response, parse_ai_plan_to_rows
 
@@ -72,7 +72,7 @@ def display_questionnaire_page():
         st.rerun()
 
 
-def render_new_plan_tab(user_profile):
+def render_chat_tab(user_profile):
     st.header("Planung mit Milo")
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen?"}]
@@ -99,47 +99,42 @@ def render_new_plan_tab(user_profile):
         st.divider()
         if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
             with st.spinner("Plan wird aktiviert..."):
-                # --- DEBUGGING-SCHRITT 1: Prüfen, welche UUID verwendet wird ---
-                st.info(f"Versuche Plan für Profil-UUID zu aktivieren: `{user_profile.get('uuid')}`")
-                
                 new_rows = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_profile)
-                
-                # --- DEBUGGING-SCHRITT 2: Zeigen, was in die DB geschrieben werden soll ---
-                st.write("Folgende Datenzeilen wurden aus dem Plan generiert:")
-                st.write(new_rows)
 
                 if not new_rows:
                     st.error("Der Plan konnte nicht verarbeitet werden. Das KI-Format war unerwartet. Bitte versuche es erneut.")
                 else:
-                    # Funktion aufrufen, um alte Pläne zu löschen und neue einzufügen
-                    success = replace_user_workouts(user_profile['uuid'], new_rows)
-                    
-                    if success:
+                    # --- KORRIGIERTE LOGIK: Manuelles Löschen und Einfügen ---
+                    try:
+                        # 1. Alte Workouts laden
+                        old_workouts = load_user_workouts(user_profile['uuid'])
+                        
+                        # 2. Alte Workouts einzeln löschen
+                        for item in old_workouts:
+                            supabase_auth_client.table("workouts").delete().eq("id", item['id']).execute()
+                        
+                        # 3. Neue Workouts einzeln einfügen
+                        for row in new_rows:
+                            supabase_auth_client.table("workouts").insert(row).execute()
+                        
+                        # Wenn alles geklappt hat:
                         st.success("Dein neuer Plan ist jetzt aktiv!")
                         st.balloons()
-                        # Chat-Verlauf für den nächsten Plan zurücksetzen
                         del st.session_state.messages
                         del st.session_state.latest_plan_text
                         time.sleep(1)
                         st.rerun()
-                    else:
-                        st.error("Es gab ein Problem beim Speichern des neuen Plans in der Datenbank.")
+
+                    except Exception as e:
+                        st.error(f"Ein Fehler ist beim Aktivieren des Plans aufgetreten: {e}")
+
 
 def display_training_tab(user_profile_uuid: str):
     st.header("Dein aktueller Plan")
-    
-    # --- DEBUGGING-SCHRITT 3: Prüfen, welche UUID zum Laden verwendet wird ---
-    st.info(f"Lade Workouts für Profil-UUID: `{user_profile_uuid}`")
-    
     workouts_data = load_user_workouts(user_profile_uuid)
-    
-    # --- DEBUGGING-SCHRITT 4: Zeigen, was aus der DB geladen wurde ---
-    st.write("Von Supabase geladene Workout-Daten:")
-    st.write(workouts_data)
 
     if not workouts_data:
-        st.warning("Keine aktiven Workouts in der Datenbank für diese UUID gefunden.")
-        st.info("Erstelle einen neuen Plan im 'Neuer Plan'-Tab!")
+        st.info("Du hast noch keinen aktiven Trainingsplan. Erstelle einen neuen Plan im 'Chat mit Milo'-Tab!")
         return
     
     df = pd.DataFrame(workouts_data)
@@ -185,29 +180,29 @@ def display_training_tab(user_profile_uuid: str):
 def display_main_app_page(user_profile):
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
-    # --- DEBUGGING-SCHRITT 5: Das vollständige Nutzerprofil anzeigen ---
-    with st.expander("Debug: Aktives Nutzerprofil im Session State"):
-        st.json(user_profile)
-
-    tab1, tab2, tab3 = st.tabs(["💪 Training", "🤖 Neuer Plan", "👤 Profil"])
+    # KORRIGIERTE TAB-NAMEN
+    tab1, tab2, tab3, tab4 = st.tabs(["Training", "Chat mit Milo", "Stats", "Profil"])
 
     with tab1:
-        # Sicherstellen, dass die UUID vorhanden ist, bevor sie übergeben wird
         if 'uuid' in user_profile:
             display_training_tab(user_profile['uuid'])
         else:
             st.error("Fehler: Keine UUID im Nutzerprofil gefunden. Login-Prozess bitte überprüfen.")
 
     with tab2:
-        render_new_plan_tab(user_profile)
+        # Die Chat-Funktion wird jetzt hier aufgerufen
+        render_chat_tab(user_profile)
 
     with tab3:
+        st.header("Deine Fortschritte")
+        st.info("Dieser Bereich wird bald deine Trainingsstatistiken anzeigen.")
+    
+    with tab4:
         st.header("Dein Profil")
         st.write(f"**Name:** {user_profile.get('forename', '')} {user_profile.get('surename', '')}")
         st.write(f"**E-Mail:** {user_profile.get('email', '')}")
         st.write(f"**Profil-UUID:** `{user_profile.get('uuid')}`")
         if st.button("Logout"):
-            # Alle Session-Keys löschen für einen sauberen Logout
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             supabase_auth_client.auth.sign_out()

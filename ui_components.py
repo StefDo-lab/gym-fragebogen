@@ -28,8 +28,6 @@ def inject_mobile_styles():
 
 def display_milo_logo():
     """Displays the Coach Milo logo."""
-    # IMPORTANT: Upload your logo to your GitHub repository and get the raw URL.
-    # Replace the placeholder URL below with your actual logo URL.
     logo_url = "https://raw.githubusercontent.com/dein-github-user/dein-repo/feature/coach-milo-makeover/logo.png" #<-- ANPASSEN
     try:
         st.image(logo_url, width=120)
@@ -109,10 +107,6 @@ def display_questionnaire_page():
         ])
         goalDetail = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
 
-        st.subheader("Medizinische Fragen")
-        surgery = st.radio("1. OP in den letzten 12–18 Monaten?", ["Nein", "Ja"])
-        surgeryDetails = st.text_area("Details zur OP", key="surgery_details")
-        
         # ... (Add all other medical questions from your original questionnaire here) ...
 
         dsgvo = st.checkbox("Ich stimme der DSGVO-Einwilligung zu *")
@@ -139,8 +133,6 @@ def display_questionnaire_page():
                     "experience": experience,
                     "goals": "; ".join(goals),
                     "goalDetail": goalDetail,
-                    "surgery": surgery,
-                    "surgeryDetails": surgeryDetails,
                     # ... (add all other fields to the payload) ...
                 }
                 response = insert_data("questionaire", data_payload)
@@ -246,33 +238,32 @@ def display_main_app_page(user_profile):
                 with st.expander(f"**{workout_name}**", expanded=True):
                     workout_group = df[df['workout'] == workout_name]
                     for exercise_name in workout_group['exercise'].unique():
-                        with st.container():
-                            st.markdown(f"##### {exercise_name}")
-                            exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values(by='set')
-                            for _, row in exercise_group.iterrows():
-                                cols = st.columns([1, 2, 2, 1, 2])
-                                with cols[0]:
-                                    st.markdown(f"**Satz {row['set']}**")
-                                with cols[1]:
-                                    new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5)
-                                with cols[2]:
-                                    new_reps = st.number_input("Wdh", value=int(row['reps']), key=f"r_{row['id']}", min_value=0, step=1)
-                                with cols[3]:
-                                    new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1)
-                                with cols[4]:
-                                    if row['completed']:
-                                        st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True)
-                                    else:
-                                        if st.button("Abschließen", key=f"save_{row['id']}", type="primary"):
-                                            updates = {
-                                                "weight": new_weight, "reps": new_reps, "rirDone": new_rir,
-                                                "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                                            }
-                                            if update_data("workouts", updates, "id", row['id']):
-                                                st.rerun()
-                                            else:
-                                                st.error("Fehler beim Speichern.")
-                            st.divider()
+                        st.markdown(f"##### {exercise_name}")
+                        exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values(by='set')
+                        for _, row in exercise_group.iterrows():
+                            cols = st.columns([1, 2, 2, 1, 2])
+                            with cols[0]:
+                                st.write(f"Satz {row['set']}")
+                            with cols[1]:
+                                new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
+                            with cols[2]:
+                                new_reps = st.number_input("Wdh", value=int(row['reps']), key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
+                            with cols[3]:
+                                new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
+                            with cols[4]:
+                                if row['completed']:
+                                    st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
+                                else:
+                                    if st.button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
+                                        updates = {
+                                            "weight": new_weight, "reps": new_reps, "rirDone": new_rir,
+                                            "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                        }
+                                        if update_data("workouts", updates, "id", row['id']):
+                                            st.rerun()
+                                        else:
+                                            st.error("Fehler beim Speichern.")
+                        st.divider()
 
     with tab2:
         history_summary = "Keine Trainingshistorie vorhanden." # Placeholder

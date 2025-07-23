@@ -29,7 +29,6 @@ def inject_mobile_styles():
 
 def display_milo_logo():
     """Displays the Coach Milo logo."""
-    # KORRIGIERT: URL wurde mit deinem Link aktualisiert
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true" 
     try:
         st.image(logo_url, width=120)
@@ -85,22 +84,24 @@ def render_chat_tab(user_profile):
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen?"}]
     
-    # KORRIGIERT: Zeigt das Logo als Avatar für den Assistenten an
     for message in st.session_state.messages:
-        avatar_icon = logo_url if message["role"] == "assistant" else "👤"
+        avatar_icon = logo_url if message["role"] == "assistant" else "🧑"
         with st.chat_message(message["role"], avatar=avatar_icon):
             st.markdown(message["content"])
 
     if prompt := st.chat_input("Was möchtest du trainieren?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user", avatar="👤"):
+        with st.chat_message("user", avatar="🧑"):
             st.markdown(prompt)
 
         with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
-                full_prompt = f"Nutzerprofil: {user_profile}\n\nAnfrage: {prompt}"
-                temp_history = [{"role": "user", "content": full_prompt}]
-                response = get_chat_response(temp_history)
+                # HINWEIS: Hier könnte man die echte Trainingshistorie laden und analysieren
+                history_analysis = "Keine Trainingshistorie zur Analyse vorhanden."
+                # Hier könnten zusätzliche Wünsche aus UI-Elementen gesammelt werden
+                additional_info = {"text": "Keine besonderen Wünsche"}
+                
+                response = get_chat_response(prompt, user_profile, history_analysis, additional_info)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.session_state.latest_plan_text = response

@@ -25,10 +25,23 @@ ai_client = init_openai_client()
 
 # --- AI Prompt and Plan Parsing Functions ---
 
+def get_ai_prompt_template():
+    """Loads the main AI prompt from an external file."""
+    try:
+        with open('ai_prompt.txt', 'r', encoding='utf-8') as file:
+            # We only need the prompt part, not the configuration header
+            content = file.read()
+            if '### ENDE KONFIGURATION ###' in content:
+                return content.split('### ENDE KONFIGURATION ###', 1)[1]
+            return content
+    except FileNotFoundError:
+        st.error("WICHTIG: Die Datei 'ai_prompt.txt' wurde nicht gefunden. Bitte erstellen Sie sie.")
+        return "Erstelle einen Trainingsplan für: {user_request}" # Fallback
+
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
     Parses the AI-generated plan text into structured data for the database.
-    It creates one row PER SET and handles data types correctly.
+    This version correctly distinguishes between workout titles and exercises.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
@@ -39,16 +52,23 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
     lines = plan_text.split('\n')
     
+    plan_started = False
     for line in lines:
         line = line.strip()
         if not line:
             continue
         
-        workout_match = re.match(r'^\*\*(.+?):?\*\*', line)
-        if workout_match and ":" not in workout_match.group(1):
-            current_workout = workout_match.group(1).strip()
+        # Match workout names like **Workout Name:**
+        if line.startswith('**') and line.endswith('**'):
+            current_workout = line.strip('*').strip(':').strip()
+            plan_started = True # The plan section has officially started
             continue
         
+        # Don't process lines before the first workout title
+        if not plan_started:
+            continue
+
+        # Match exercise lines like "- Exercise: 3 Sätze, ..."
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip().strip('*')
@@ -56,7 +76,7 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
             
             try:
                 sets, weight, explanation = 3, 0.0, ""
-                reps_str_full = "10" # Default full string for reps, e.g., "8-12"
+                reps_str_full = "10"
                 
                 sets_match = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', details)
                 if sets_match: sets = int(sets_match.group(1))
@@ -70,32 +90,16 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                 explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                 if explanation_match: explanation = explanation_match.group(1).strip()
 
-                # KORRIGIERT: Konvertiere den Reps-String in eine Zahl für die Datenbank
-                # Nimmt die erste Zahl aus einem Bereich (z.B. "8-10" -> 8)
                 reps_for_db = int(re.split(r'\s*-\s*', reps_str_full)[0])
-
-                # KORRIGIERT: Kombiniere Ziel-Reps und Erklärung für die Coach-Nachricht
                 full_coach_message = f"Ziel: {reps_str_full} Wdh. {explanation}".strip()
 
                 for i in range(1, sets + 1):
                     rows.append({
-                        'uuid': user_uuid, 
-                        'date': current_date, 
-                        'name': user_name,
-                        'workout': current_workout,
-                        'exercise': exercise_name,
-                        'set': i, 
-                        'weight': weight,
-                        'reps': reps_for_db, # Speichert eine saubere Zahl (Integer)
-                        'unit': 'kg', 
-                        'type': '', 
-                        'completed': False,
-                        'messageToCoach': '', 
-                        'messageFromCoach': full_coach_message, # Speichert den vollen Rep-Bereich
-                        'rirSuggested': 0, 
-                        'rirDone': 0, 
-                        'generalStatementFrom': '', 
-                        'generalStatementTo': '',
+                        'uuid': user_uuid, 'date': current_date, 'name': user_name,
+                        'workout': current_workout, 'exercise': exercise_name, 'set': i, 
+                        'weight': weight, 'reps': reps_for_db, 'unit': 'kg', 'type': '', 
+                        'completed': False, 'messageToCoach': '', 'messageFromCoach': full_coach_message,
+                        'rirSuggested': 0, 'rirDone': 0, 'generalStatementFrom': '', 'generalStatementTo': '',
                         'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
                         'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
                     })
@@ -104,29 +108,36 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
     return rows
 
-
-def get_chat_response(history):
-    """Sends the chat history to the AI and gets a contextual response."""
+def get_chat_response(user_request: str, user_profile: dict, history_analysis: str, additional_info: str):
+    """Builds the full prompt from the template and gets a response from the AI."""
     if not ai_client:
-        return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden. Bitte prüfe den API-Key."
+        return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
-    system_prompt = {
-        "role": "system",
-        "content": """Du bist Milo, ein persönlicher KI-Coach. Deine Aufgabe ist es, mit dem Nutzer interaktiv einen Trainingsplan zu erstellen.
-1. Beginne IMMER mit einer kurzen, motivierenden Erklärung.
-2. Erstelle den Plan danach. Jeder Trainingstag MUSS mit einem Workout-Namen beginnen im Format: **Name des Workouts:**
-3. Format pro Übung EXAKT so: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurzer Hinweis)
-4. Wenn der Nutzer Änderungen vorschlägt (z.B. "ersetze Übung X"), passe den letzten Plan an und sende den **kompletten, aktualisierten Plan** zurück.
-5. Behalte immer deine freundliche, motivierende und kompetente Coach-Persönlichkeit bei.
-"""
-    }
+    prompt_template = get_ai_prompt_template()
     
-    messages_to_send = [system_prompt] + history
+    # Dummy data for template placeholders that are not yet implemented
+    # In a real scenario, these would be filled with actual data
+    training_days = additional_info.get("training_days", 3)
+    split_type = additional_info.get("split_type", "Ganzkörper")
+    focus = additional_info.get("focus", "Muskelaufbau")
+    weight_instruction = "Basiere die Gewichte auf der Trainingshistorie."
+
+    # Fill the template with the actual user data
+    full_prompt = prompt_template.format(
+        profile=user_profile,
+        history_analysis=history_analysis,
+        additional_info=additional_info.get("text", "Keine"),
+        training_days=training_days,
+        split_type=split_type,
+        focus=focus,
+        weight_instruction=weight_instruction,
+        user_request=user_request # Pass the user's direct message
+    )
 
     try:
         response = ai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages_to_send,
+            model="gpt-4o", # Model from prompt file
+            messages=[{"role": "user", "content": full_prompt}],
             temperature=0.7
         )
         return response.choices[0].message.content

@@ -27,57 +27,28 @@ def get_ai_prompt_template():
     Loads the AI prompt template and configuration from an external file.
     Falls back to a default prompt if the file is not found.
     """
-    config = {
-        'temperature': 0.7,
-        'model': 'gpt-4o-mini',
-        'max_tokens': 4000,
-        'top_p': 1.0,
-        'prompt': ''
-    }
-    
+    # This function remains for potential future use or as a fallback.
+    # The main chat logic uses a system prompt directly.
     try:
         with open('ai_prompt.txt', 'r', encoding='utf-8') as file:
-            config['prompt'] = file.read()
+            return file.read()
     except FileNotFoundError:
         st.warning("ai_prompt.txt nicht gefunden! Verwende eingebautes Template.")
-        config['prompt'] = """
-Du bist Milo, ein persönlicher KI-Coach, benannt nach dem antiken Athleten Milon von Kroton, der für das Prinzip der progressiven Überlastung bekannt ist. 
-Sprich immer in der Ich-Form, sei motivierend und erkläre deine Entscheidungen, als würdest du mit einem Klienten sprechen.
-
-Beginne deine Antwort immer mit einer kurzen, persönlichen Erklärung (2-3 Sätze), warum du diesen Plan erstellt hast.
-
+        return """
+Du bist Milo, ein persönlicher KI-Coach, benannt nach dem antiken Athleten Milon von Kroton. 
+Sprich immer in der Ich-Form, sei motivierend und erkläre deine Entscheidungen.
+Beginne deine Antwort immer mit einer kurzen, persönlichen Erklärung, warum du diesen Plan erstellt hast.
 **Dein persönlicher Trainingsplan**
 [Hier deine Erklärung einfügen]
-
-BENUTZERPROFIL:
-{profile}
-
-TRAININGSHISTORIE:
-{history_analysis}
-
-AKTUELLE WÜNSCHE DES NUTZERS:
-{additional_info}
-
-TRAININGSPARAMETER:
-- Trainingstage pro Woche: {training_days}
-- Split-Typ: {split_type}
-- Fokus: {focus}
-
-WICHTIGE FORMATIERUNGSREGELN:
-1. Erstelle GENAU {training_days} Trainingstage.
-2. Jeder Trainingstag MUSS mit einem Namen im Format **Workout Name:** beginnen.
-3. Formatiere jede Übung EXAKT so: - Übungsname: X Sätze, Y Wdh, Z kg (Fokus: Kurzer Hinweis)
-4. {weight_instruction}
+... (rest of your detailed prompt) ...
 """
-    return config
 
 def parse_ai_plan_to_rows(plan_text, user_data_uuid, user_name):
     """Parses the AI-generated plan text into structured data for the database."""
     rows = []
     current_date = datetime.date.today().isoformat()
     current_workout = "Unbenanntes Workout"
-    plan_explanation = "Milo hat diesen Plan speziell für dich erstellt."
-
+    
     lines = plan_text.split('\n')
     
     for line in lines:
@@ -104,11 +75,11 @@ def parse_ai_plan_to_rows(plan_text, user_data_uuid, user_name):
                     reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                     if reps_match: reps = reps_match.group(1).strip()
 
-                    explanation_match = re.search(r'\((?:Fokus):\s*(.+)\)$', details)
+                    explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                     if explanation_match: explanation = explanation_match.group(1).strip()
 
                     for i in range(1, sets + 1):
-                        # --- KORREKTUR: Vollständiges Datenpaket erstellen ---
+                        # --- KORREKTUR: Erstellt ein vollständiges Dictionary, das exakt zur DB-Tabelle passt ---
                         rows.append({
                             'uuid': user_data_uuid, 
                             'date': current_date, 
@@ -133,7 +104,8 @@ def parse_ai_plan_to_rows(plan_text, user_data_uuid, user_name):
                 except Exception as e:
                     st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")
 
-    return rows, plan_explanation
+    # We don't need to return the explanation separately anymore
+    return rows
 
 def get_chat_response(history):
     """Sends the chat history to the AI and gets a contextual response."""

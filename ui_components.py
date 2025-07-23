@@ -6,7 +6,10 @@ import datetime
 import uuid
 import time
 import pandas as pd
-from supabase_utils import supabase_auth_client, insert_data, get_user_profile_by_data_uuid, load_user_workouts
+from supabase_utils import (
+    supabase_auth_client, insert_data, get_user_profile_by_data_uuid, 
+    load_user_workouts, delete_data, update_data
+)
 from ai_utils import get_chat_response, parse_ai_plan_to_rows
 
 # --- General UI Components ---
@@ -76,7 +79,6 @@ def display_questionnaire_page():
     st.info("Hallo! Ich bin Milo, dein persönlicher KI-Coach. Um den perfekten Plan für dich zu erstellen, muss ich dich erst ein wenig kennenlernen. Das dauert nur 2 Minuten.")
 
     with st.form("fitness_fragebogen"):
-        # This is the full form from your questionnaire app.
         st.header("Persönliche Daten")
         forename = st.text_input("Vorname *")
         surename = st.text_input("Nachname *")
@@ -86,13 +88,35 @@ def display_questionnaire_page():
         max_date = today.replace(year=today.year - 16)
         birthday = st.date_input("Geburtsdatum *", min_value=min_date, max_value=max_date, value=max_date)
         
-        # ... (PASTE ALL OTHER FORM FIELDS FROM YOUR QUESTIONNAIRE HERE) ...
-        
+        email = st.text_input("E-Mail-Adresse *", value=st.session_state.user.email, disabled=True)
+        phone = st.text_input("Telefonnummer *")
+        gender = st.selectbox("Geschlecht", ["Bitte wählen...", "männlich", "weiblich", "divers"])
+        date = st.date_input("Datum der Erfassung", value=datetime.date.today(), disabled=True)
+        studio = st.selectbox("Studio *", ["Bitte wählen...", "Studio 1", "Studio 2"])
+
+        st.subheader("Körperdaten (optional)")
+        height = st.number_input("Größe (cm)", min_value=0, step=1)
+        weight = st.number_input("Gewicht (kg)", min_value=0.0, step=0.1)
+        bodyfat = st.number_input("Körperfettanteil (%)", min_value=0.0, step=0.1)
+
+        st.subheader("Gesundheit und Ziele")
+        experience = st.radio("Hast du bereits Erfahrung mit Krafttraining?", ["Ja", "Nein"])
+        goals = st.multiselect("Deine Trainingsziele", [
+            "Rücken stärken", "Gelenke stabilisieren", "Osteoporoseprävention",
+            "Stoffwechsel verbessern", "Haltung verbessern", "Gewebe straffen",
+            "Gewicht reduzieren", "Muskelmasse aufbauen", "Vorbereitung auf Sport",
+            "Verletzungsprophylaxe", "Leistungssteigerung", "Dysbalancen ausgleichen"
+        ])
+        goalDetail = st.text_area("Weitere Anmerkungen zu deinen Trainingszielen")
+
+        # ... (Add all other medical questions from your original questionnaire here) ...
+
+        dsgvo = st.checkbox("Ich stimme der DSGVO-Einwilligung zu *")
         abgeschickt = st.form_submit_button("Meine Antworten an Milo senden")
 
         if abgeschickt:
-            if not forename or not surename:
-                st.error("Bitte fülle mindestens Vor- und Nachname aus.")
+            if not (forename and surename and phone and studio != "Bitte wählen..." and dsgvo):
+                st.error("Bitte fülle alle Pflichtfelder (*) aus.")
             else:
                 data_payload = {
                     "auth_user_id": st.session_state.user.id,
@@ -100,15 +124,25 @@ def display_questionnaire_page():
                     "forename": forename,
                     "surename": surename,
                     "birthday": str(birthday),
-                    "email": st.session_state.user.email,
-                    # ... (PASTE ALL OTHER PAYLOAD FIELDS HERE) ...
+                    "email": email,
+                    "phone": phone,
+                    "gender": gender,
+                    "date": str(date),
+                    "studio": studio,
+                    "height": height,
+                    "weight": weight,
+                    "bodyfat": bodyfat,
+                    "experience": experience,
+                    "goals": "; ".join(goals),
+                    "goalDetail": goalDetail,
+                    # ... (add all other fields to the payload) ...
                 }
                 response = insert_data("questionaire", data_payload)
                 if response.status_code in [200, 201]:
                     st.success("Danke! Milo hat deine Daten erhalten. Du wirst jetzt zur App weitergeleitet.")
                     st.balloons()
                     st.session_state.questionnaire_complete = True
-                    time.sleep(2) # Give user time to read the message
+                    time.sleep(2)
                     st.rerun()
                 else:
                     st.error(f"Fehler beim Speichern: {response.text}")
@@ -117,32 +151,23 @@ def render_chat_tab(user_profile, history_summary):
     """Renders the interactive chat UI for plan generation."""
     st.header("Planung mit Milo")
 
-    # Initialize chat history in session state if it doesn't exist
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen? Sag mir einfach, was du dir vorstellst."}]
 
-    # Display existing messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Get user input
     if prompt := st.chat_input("Was möchtest du trainieren?"):
-        # Add user message to history
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Generate and display assistant response
         with st.chat_message("assistant"):
             with st.spinner("Milo denkt nach..."):
-                # For the very first user message, we inject the profile and history
-                if len(st.session_state.messages) == 2: # Assistant welcome + first user prompt
+                if len(st.session_state.messages) == 2:
                     full_initial_prompt = f"""
 Hier sind die Hintergrundinformationen über den Nutzer. Erstelle basierend darauf und seiner Anfrage den ersten Plan.
-
 ---
 BENUTZERPROFIL:
 {user_profile}
@@ -153,66 +178,114 @@ TRAININGSHISTORIE:
 AKTUELLE ANFRAGE DES NUTZERS:
 {prompt}
 """
-                    # Create a temporary history for the first call
                     temp_history = [{"role": "user", "content": full_initial_prompt}]
                     response = get_chat_response(temp_history)
                 else:
-                    # For all subsequent messages, just send the conversation history
                     response = get_chat_response(st.session_state.messages)
                 
                 st.markdown(response)
-                # Add assistant response to history
                 st.session_state.messages.append({"role": "assistant", "content": response})
-
-                # Store the latest plan for activation
                 st.session_state.latest_plan_text = response
 
-
-    # "Activate Plan" button should be visible if a plan has been generated
     if 'latest_plan_text' in st.session_state and st.session_state.latest_plan_text:
         st.divider()
         if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
-            # Here you would call the parsing and database insertion logic
-            st.success("Plan wird aktiviert... (Logik hier einfügen)")
-            # Reset chat for the next planning session
-            del st.session_state.messages
-            del st.session_state.latest_plan_text
-            st.rerun()
-
+            with st.spinner("Plan wird aktiviert..."):
+                user_data_uuid = user_profile.get("uuid")
+                user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
+                
+                # 1. Parse the plan
+                new_rows, _ = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_data_uuid, user_name)
+                
+                if not new_rows:
+                    st.error("Der Plan konnte nicht verarbeitet werden. Bitte versuche es erneut.")
+                else:
+                    # 2. Delete old workouts
+                    old_workouts = load_user_workouts(user_data_uuid)
+                    for item in old_workouts:
+                        delete_data("workouts", "id", item['id'])
+                    
+                    # 3. Insert new workouts
+                    success_count = 0
+                    for row in new_rows:
+                        response = insert_data("workouts", row)
+                        if response.status_code in [200, 201]:
+                            success_count += 1
+                    
+                    if success_count == len(new_rows):
+                        st.success("Dein neuer Plan ist jetzt aktiv!")
+                        st.balloons()
+                        # Clean up session state
+                        del st.session_state.messages
+                        del st.session_state.latest_plan_text
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Es gab ein Problem beim Speichern des neuen Plans.")
 
 def display_main_app_page(user_profile):
     """Displays the main workout tracker UI with tabs."""
     st.title(f"Coach Milo")
     
-    # We need the user's data UUID for most operations
     user_data_uuid = user_profile.get("uuid")
     
     tab1, tab2, tab3, tab4 = st.tabs(["Training", "Chat mit Milo", "Stats", "Profil"])
 
     with tab1:
         st.header("Dein Training heute")
-        workouts = load_user_workouts(user_data_uuid)
-        if not workouts:
+        workouts_data = load_user_workouts(user_data_uuid)
+        if not workouts_data:
             st.info("Du hast noch keine aktiven Workouts. Erstelle einen neuen Plan im 'Chat mit Milo'-Tab!")
         else:
-            df = pd.DataFrame(workouts)
-            # ... (Logic from your workout tracker's tab1 to display workouts goes here) ...
-            st.dataframe(df) # Placeholder
+            df = pd.DataFrame(workouts_data)
+            df = df.sort_values(by=['id']) # Ensure order
+            
+            for workout_name in df['workout'].unique():
+                with st.expander(f"**{workout_name}**", expanded=True):
+                    workout_group = df[df['workout'] == workout_name]
+                    for exercise_name in workout_group['exercise'].unique():
+                        with st.container():
+                            st.markdown(f"##### {exercise_name}")
+                            exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values(by='set')
+                            for _, row in exercise_group.iterrows():
+                                cols = st.columns([1, 2, 2, 1, 2])
+                                with cols[0]:
+                                    st.markdown(f"**Satz {row['set']}**")
+                                with cols[1]:
+                                    new_weight = st.number_input("Gewicht (kg)", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5)
+                                with cols[2]:
+                                    new_reps = st.number_input("Wdh", value=int(row['reps']), key=f"r_{row['id']}", min_value=0, step=1)
+                                with cols[3]:
+                                    new_rir = st.number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1)
+                                with cols[4]:
+                                    if row['completed']:
+                                        st.button("Erledigt ✅", key=f"done_{row['id']}", disabled=True)
+                                    else:
+                                        if st.button("Abschließen", key=f"save_{row['id']}", type="primary"):
+                                            updates = {
+                                                "weight": new_weight, "reps": new_reps, "rirDone": new_rir,
+                                                "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                            }
+                                            if update_data("workouts", updates, "id", row['id']):
+                                                st.rerun()
+                                            else:
+                                                st.error("Fehler beim Speichern.")
+                            st.divider()
 
     with tab2:
-        # We need the history summary for the chat context
-        # Note: This is a simplified call. In a real app, you'd build the summary properly.
         history_summary = "Keine Trainingshistorie vorhanden." # Placeholder
         render_chat_tab(user_profile, history_summary)
 
     with tab3:
         st.header("Deine Fortschritte")
-        # ... (Logic from your workout tracker's tab3 goes here) ...
+        st.info("Dieser Bereich wird bald deine Trainingsstatistiken anzeigen.")
     
     with tab4:
         st.header("Dein Profil")
-        # ... (The questionnaire form will be moved here for editing) ...
+        st.info("Hier kannst du bald deine Profildaten bearbeiten.")
         if st.button("Logout"):
             supabase_auth_client.auth.sign_out()
             st.session_state.user = None
+            st.session_state.user_profile = None
+            st.session_state.questionnaire_complete = False
             st.rerun()

@@ -39,42 +39,34 @@ def get_ai_prompt_template():
 
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
-    Parses the AI-generated plan text into structured data for the database.
-    This is the most robust version, inspired by the original working code.
+    Parses the AI-generated plan text, expecting the TEIL 1 / TEIL 2 structure.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = "Trainingsplan" # A better default name
+    current_workout = "Trainingsplan"
     
     user_uuid = user_profile.get("uuid")
     user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
 
-    lines = plan_text.split('\n')
+    # Isoliere TEIL 2 - DER TRAININGSPLAN
+    plan_section = plan_text
+    if "TEIL 2 - DER TRAININGSPLAN" in plan_text:
+        plan_section = plan_text.split("TEIL 2 - DER TRAININGSPLAN", 1)[1]
+
+    lines = plan_section.strip().split('\n')
     
     for line in lines:
         line = line.strip()
         if not line:
             continue
         
-        # Flexible workout title detection. A line is a title if it's short,
-        # ends with a colon or is bold, but is NOT an exercise line.
-        is_title = False
-        # Regex to detect various list markers (-, *, 1., etc.)
-        is_exercise_marker = re.match(r'^\s*(?:[-*]|\d+\.)', line)
-
-        if not is_exercise_marker and len(line.split()) < 5:
-            if line.endswith(':'):
-                current_workout = line.strip(':* ')
-                is_title = True
-            elif line.startswith('**') and line.endswith('**'):
-                current_workout = line.strip(':* ')
-                is_title = True
-
-        if is_title:
+        # Match workout titles like **Workout Name:**
+        if line.startswith('**') and line.endswith(':'):
+            current_workout = line.strip('*').strip(':').strip()
             continue
 
-        # Flexible exercise detection (handles '-', '*', and '1.' lists)
-        exercise_match = re.match(r'^\s*(?:[-*]|\d+\.)\s*(.+?):\s*(.*)', line)
+        # Match exercise lines
+        exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
             details = exercise_match.group(2).strip()
@@ -91,13 +83,13 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                 elif "körpergewicht" in details.lower() or "bw" in details.lower():
                     weight = 0.0
 
-                reps_match = re.search(r'(\d+\s*-\s*\d+|\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
+                reps_match = re.search(r'(\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match: reps_str_full = reps_match.group(1).strip()
 
                 explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                 if explanation_match: explanation = explanation_match.group(1).strip()
 
-                reps_for_db = int(re.split(r'\s*-\s*', reps_str_full)[0])
+                reps_for_db = int(reps_str_full)
                 full_coach_message = f"Ziel: {reps_str_full} Wdh. {explanation}".strip()
 
                 for i in range(1, sets + 1):
@@ -122,24 +114,22 @@ def get_chat_response(messages: list, user_profile: dict, history_analysis: str,
 
     prompt_template = get_ai_prompt_template()
     
-    last_user_request = ""
-    for msg in reversed(messages):
-        if msg["role"] == "user":
-            last_user_request = msg["content"]
-            break
-
+    # Baue den Chat-Verlauf als einfachen Text zusammen
+    chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+    
+    # Die "zusätzlichen Wünsche" sind jetzt der gesamte Chatverlauf
     system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis=history_analysis,
-        additional_info=additional_info.get("text", "Keine"),
+        additional_info=chat_history_text, # Hier wird der Kontext übergeben
         training_days=additional_info.get("training_days", 3),
         split_type=additional_info.get("split_type", "Ganzkörper"),
         focus=additional_info.get("focus", "Muskelaufbau"),
-        weight_instruction="Basiere die Gewichte auf der Trainingshistorie.",
-        user_request=last_user_request
+        weight_instruction="Basiere die Gewichte auf der Trainingshistorie."
     )
 
-    messages_to_send = [{"role": "system", "content": system_prompt_content}] + messages
+    # Wir senden nur den System-Prompt, da der Verlauf schon enthalten ist
+    messages_to_send = [{"role": "user", "content": system_prompt_content}]
 
     try:
         response = ai_client.chat.completions.create(

@@ -94,8 +94,8 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                         'uuid': user_uuid, 'date': current_date, 'name': user_name,
                         'workout': current_workout, 'exercise': exercise_name, 'set': i, 
                         'weight': weight, 'reps': reps_for_db, 'unit': 'kg',
-                        'completed': False, 'messageToCoach': '', 'messageFromCoach': full_coach_message,
-                        'rirDone': 0 
+                        'completed': False, 'messagetoCoach': '', 'messagefromCoach': full_coach_message,
+                        'rirdone': 0 
                     })
             except Exception as e:
                 st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")

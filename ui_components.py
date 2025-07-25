@@ -60,8 +60,6 @@ def display_login_page():
             password = st.text_input("Passwort", type="password")
             if st.form_submit_button("Account erstellen", use_container_width=True):
                 try:
-                    # For a real app, you might want to handle the confirmation email process.
-                    # For this dev version, we sign up and then immediately sign in.
                     res = supabase_auth_client.auth.sign_up({"email": email, "password": password})
                     if res.user:
                         st.success("Registrierung erfolgreich! Du wirst nun zum Fragebogen weitergeleitet.")
@@ -167,14 +165,14 @@ def _render_questionnaire_step3():
             ["Kürzliche Operation", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme"],
             default=q_data.get("medical_topics", [])
         )
-        
-        medical_notes = q_data.get("medical_notes", {})
-        if "Kürzliche Operation" in medical_topics:
-            medical_notes['surgery'] = st.text_area("Bitte beschreibe die OP und was beachtet werden muss:", value=medical_notes.get('surgery', ''), key="surgery_details")
-        if "Ausstrahlende Schmerzen" in medical_topics:
-            medical_notes['pain_details'] = st.text_area("Bitte beschreibe die ausstrahlenden Schmerzen (Wo? Wann? Wie stark?):", value=medical_notes.get('pain_details', ''), key="pain_details")
-        if "Bandscheibenvorfall" in medical_topics:
-             medical_notes['disc_issue'] = st.text_area("Bitte beschreibe die Bandscheiben-Thematik (Wo? Akut oder verheilt?):", value=medical_notes.get('disc_issue', ''), key="disc_details")
+
+        # WORKAROUND: Permanent text area for details
+        st.text_area(
+            "Falls du oben eine oder mehrere Optionen ausgewählt hast, beschreibe sie hier bitte im Detail.",
+            placeholder="z.B. Bandscheibenvorfall HWS vor 5 Jahren, komplett verheilt. Oder: Knie-OP links vor 6 Monaten, beuge nur bis 90 Grad.",
+            key="medical_topics_details",
+            value=q_data.get("medical_topics_details", "")
+        )
 
         st.text_area("Gibt es aktuelle Schmerzen oder Verletzungen, die dein Training beeinflussen könnten?", key="pain_and_injury_notes", value=q_data.get("pain_and_injury_notes", ""))
         st.text_area("Weitere Anmerkungen zu deiner Gesundheit (optional)", key="other_health_notes", value=q_data.get("other_health_notes", ""))
@@ -195,7 +193,7 @@ def _render_questionnaire_step3():
             # Save final data from this step
             q_data.update({
                 "medical_topics": medical_topics,
-                "medical_notes": medical_notes,
+                "medical_topics_details": st.session_state.medical_topics_details,
                 "pain_and_injury_notes": st.session_state.pain_and_injury_notes,
                 "other_health_notes": st.session_state.other_health_notes,
                 "sleep_quality_rating": sleep_quality_rating,
@@ -204,7 +202,6 @@ def _render_questionnaire_step3():
             })
 
             with st.spinner("Speichere deine Antworten..."):
-                # Map session data to the final database payload
                 db_payload = {
                     # Dedicated columns
                     "auth_user_id": st.session_state.user.id,
@@ -237,7 +234,7 @@ def _render_questionnaire_step3():
                     "sleep_quality_rating": q_data.get("sleep_quality_rating"),
                     "stress_level_rating": q_data.get("stress_level_rating"),
                     "motivation_level": q_data.get("motivation_level"),
-                    "medical_notes": q_data.get("medical_notes"),
+                    "medical_topics_details": q_data.get("medical_topics_details"),
                     "pain_and_injury_notes": q_data.get("pain_and_injury_notes"),
                     "other_health_notes": q_data.get("other_health_notes"),
                 }
@@ -248,7 +245,6 @@ def _render_questionnaire_step3():
                     st.success("Super, danke! Ich habe alle Informationen.")
                     st.balloons()
                     st.session_state.user_profile = db_payload
-                    # Clean up questionnaire state
                     del st.session_state.questionnaire_step
                     del st.session_state.questionnaire_data
                     time.sleep(2)

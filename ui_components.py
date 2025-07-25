@@ -6,6 +6,7 @@ import datetime
 import uuid
 import time
 import pandas as pd
+import re
 from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data,
     load_user_workouts, update_workout_set, add_set, delete_set,
@@ -15,6 +16,7 @@ from ai_utils import get_initial_plan_response, get_chat_response, parse_ai_plan
 
 # --- General UI Components ---
 def inject_mobile_styles():
+    """Injects CSS for mobile-friendly styling and to hide Streamlit's default header/footer."""
     st.markdown("""
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <style>
@@ -30,11 +32,13 @@ def inject_mobile_styles():
     """, unsafe_allow_html=True)
 
 def display_milo_logo():
+    """Displays the Coach Milo logo."""
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true"
     st.image(logo_url, width=120)
 
 # --- Page Rendering Functions ---
 def display_login_page():
+    """Renders the login and registration forms."""
     display_milo_logo()
     st.title("Willkommen bei Coach Milo")
     mode = st.radio("Wähle eine Option:", ["Einloggen", "Registrieren"], horizontal=True, label_visibility="collapsed")
@@ -72,7 +76,7 @@ def display_login_page():
                     st.error("Registrierung fehlgeschlagen. Ist die E-Mail schon vergeben?")
 
 
-# --- NEW MULTI-STEP QUESTIONNAIRE ---
+# --- QUESTIONNAIRE (FINAL VERSION) ---
 
 def _render_questionnaire_step1():
     """Renders UI for Step 1: Stammdaten & Körpermaße."""
@@ -160,17 +164,8 @@ def _render_questionnaire_step3():
         q_data = st.session_state.questionnaire_data
         
         st.write("##### Gesundheitliche Angaben")
-        medical_topics = st.multiselect(
-            "Welche der folgenden gesundheitlichen Themen treffen auf dich zu? (optional)",
-            ["Kürzliche Operation", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme"],
-            default=q_data.get("medical_topics", [])
-        )
-        st.text_area(
-            "Falls du oben eine oder mehrere Optionen ausgewählt hast, beschreibe sie hier bitte im Detail.",
-            placeholder="z.B. Bandscheibenvorfall HWS vor 5 Jahren, komplett verheilt.",
-            key="medical_topics_details",
-            value=q_data.get("medical_topics_details", "")
-        )
+        medical_topics = st.multiselect("Welche der folgenden gesundheitlichen Themen treffen auf dich zu? (optional)", ["Kürzliche Operation", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme"], default=q_data.get("medical_topics", []))
+        st.text_area("Falls du oben eine oder mehrere Optionen ausgewählt hast, beschreibe sie hier bitte im Detail.", placeholder="z.B. Bandscheibenvorfall HWS vor 5 Jahren, komplett verheilt.", key="medical_topics_details", value=q_data.get("medical_topics_details", ""))
         st.text_area("Gibt es aktuelle Schmerzen oder Verletzungen, die dein Training beeinflussen könnten?", key="pain_and_injury_notes", value=q_data.get("pain_and_injury_notes", ""))
         st.text_area("Weitere Anmerkungen zu deiner Gesundheit (optional)", key="other_health_notes", value=q_data.get("other_health_notes", ""))
 
@@ -188,32 +183,23 @@ def _render_questionnaire_step3():
 
         if submitted:
             q_data.update({
-                "medical_topics": medical_topics,
-                "medical_topics_details": st.session_state.medical_topics_details,
-                "pain_and_injury_notes": st.session_state.pain_and_injury_notes,
-                "other_health_notes": st.session_state.other_health_notes,
-                "sleep_quality_rating": sleep_quality_rating,
-                "stress_level_rating": stress_level_rating,
-                "motivation_level": motivation_level
+                "medical_topics": medical_topics, "medical_topics_details": st.session_state.medical_topics_details,
+                "pain_and_injury_notes": st.session_state.pain_and_injury_notes, "other_health_notes": st.session_state.other_health_notes,
+                "sleep_quality_rating": sleep_quality_rating, "stress_level_rating": stress_level_rating, "motivation_level": motivation_level
             })
 
             with st.spinner("Speichere deine Antworten..."):
                 db_payload = {
-                    "auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()),
-                    "forename": q_data.get("forename"), "surename": q_data.get("surename"),
-                    "email": st.session_state.user.email, "birthday": str(q_data.get("birthday")),
-                    "height_cm": q_data.get("height_cm"), "weight_kg": q_data.get("weight_kg"),
-                    "bodyfat_percentage": q_data.get("bodyfat_percentage"), "job_activity_level": q_data.get("job_activity_level"),
-                    "sleep_hours_avg": q_data.get("sleep_hours_avg"), "nutrition_style": q_data.get("nutrition_style"),
-                    "training_days_per_week": q_data.get("training_days_per_week"), "time_per_session_minutes": q_data.get("time_per_session_minutes"),
-                    "training_location": q_data.get("training_location"), "experience_level": q_data.get("experience_level"),
-                    "primary_goal": q_data.get("primary_goal"), "use_rir": q_data.get("use_rir"),
-                    "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),
+                    "auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()), "forename": q_data.get("forename"), "surename": q_data.get("surename"),
+                    "email": st.session_state.user.email, "birthday": str(q_data.get("birthday")), "height_cm": q_data.get("height_cm"), "weight_kg": q_data.get("weight_kg"),
+                    "bodyfat_percentage": q_data.get("bodyfat_percentage"), "job_activity_level": q_data.get("job_activity_level"), "sleep_hours_avg": q_data.get("sleep_hours_avg"),
+                    "nutrition_style": q_data.get("nutrition_style"), "training_days_per_week": q_data.get("training_days_per_week"), "time_per_session_minutes": q_data.get("time_per_session_minutes"),
+                    "training_location": q_data.get("training_location"), "experience_level": q_data.get("experience_level"), "primary_goal": q_data.get("primary_goal"),
+                    "use_rir": q_data.get("use_rir"), "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),
                 }
                 context_payload = {
-                    "secondary_goals": q_data.get("secondary_goals"), "specific_goal_text": q_data.get("specific_goal_text"),
-                    "liked_equipment": q_data.get("liked_equipment"), "disliked_exercises": q_data.get("disliked_exercises"),
-                    "sleep_quality_rating": q_data.get("sleep_quality_rating"), "stress_level_rating": q_data.get("stress_level_rating"),
+                    "secondary_goals": q_data.get("secondary_goals"), "specific_goal_text": q_data.get("specific_goal_text"), "liked_equipment": q_data.get("liked_equipment"),
+                    "disliked_exercises": q_data.get("disliked_exercises"), "sleep_quality_rating": q_data.get("sleep_quality_rating"), "stress_level_rating": q_data.get("stress_level_rating"),
                     "motivation_level": q_data.get("motivation_level"), "medical_topics_details": q_data.get("medical_topics_details"),
                     "pain_and_injury_notes": q_data.get("pain_and_injury_notes"), "other_health_notes": q_data.get("other_health_notes"),
                 }
@@ -259,28 +245,62 @@ def display_questionnaire_page():
 # --- Main App Display ---
 
 def render_chat_tab(user_profile):
+    """Renders the main chat interface, including the plan 'canvas'."""
     st.header("Planung mit Milo")
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true"
 
+    # Initialize session state variables
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "latest_plan_text" not in st.session_state:
+        st.session_state.latest_plan_text = ""
 
+    # Initial Plan Generation Logic
     if st.session_state.get("run_initial_plan_generation", False):
-        st.session_state.run_initial_plan_generation = False 
+        st.session_state.run_initial_plan_generation = False
         with st.spinner("Milo analysiert dein Profil und erstellt einen ersten Plan-Vorschlag..."):
             initial_plan = get_initial_plan_response(user_profile)
+            # The first message contains the full plan
             st.session_state.messages.append({"role": "assistant", "content": initial_plan})
             st.session_state.latest_plan_text = initial_plan
-            st.rerun() 
-    
+            st.rerun()
+
+    # Display the latest plan in an expander at the top
+    if st.session_state.latest_plan_text:
+        with st.expander("Dein aktueller Plan-Vorschlag", expanded=True):
+            st.markdown(st.session_state.latest_plan_text)
+            if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True, key="activate_plan_expander"):
+                with st.spinner("Plan wird aktiviert..."):
+                    new_rows = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_profile)
+                    if not new_rows:
+                        st.error("Der Plan konnte nicht verarbeitet werden. Überprüfe das Format.")
+                    else:
+                        try:
+                            supabase_auth_client.table("workouts").delete().eq("uuid", user_profile['uuid']).execute()
+                            supabase_auth_client.table("workouts").insert(new_rows).execute()
+                            st.success("Dein neuer Plan ist jetzt aktiv!")
+                            st.balloons()
+                            st.session_state.messages = []
+                            st.session_state.latest_plan_text = ""
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Ein Fehler ist beim Aktivieren des Plans aufgetreten: {e}")
+        st.divider()
+
+    # Display chat history
     if not st.session_state.messages:
         st.info("Hier beginnt dein Gespräch mit Milo. Nach dem Fragebogen wird er dir hier einen ersten Plan vorschlagen.")
-
+    
     for message in st.session_state.messages:
-        avatar_icon = logo_url if message["role"] == "assistant" else "🧑"
-        with st.chat_message(message["role"], avatar=avatar_icon):
-            st.markdown(message["content"])
+        # Don't display the full plan in the chat history, only the conversational part
+        content_to_display = re.sub(r'<PLAN_UPDATE>.*</PLAN_UPDATE>', '', message["content"], flags=re.DOTALL).strip()
+        if content_to_display:
+            avatar_icon = logo_url if message["role"] == "assistant" else "🧑"
+            with st.chat_message(message["role"], avatar=avatar_icon):
+                st.markdown(content_to_display)
 
+    # Handle user input
     if prompt := st.chat_input("Stelle Fragen oder gib Änderungswünsche ein"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="🧑"):
@@ -288,33 +308,20 @@ def render_chat_tab(user_profile):
 
         with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
-                response = get_chat_response(st.session_state.messages, user_profile, "N/A")
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
-                st.session_state.latest_plan_text = response
-    
-    if 'latest_plan_text' in st.session_state and st.session_state.latest_plan_text:
-        st.divider()
-        if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
-            with st.spinner("Plan wird aktiviert..."):
-                new_rows = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_profile)
-                if not new_rows:
-                    st.error("Der Plan konnte nicht verarbeitet werden. Überprüfe das Format.")
-                else:
-                    try:
-                        supabase_auth_client.table("workouts").delete().eq("uuid", user_profile['uuid']).execute()
-                        supabase_auth_client.table("workouts").insert(new_rows).execute()
-                        
-                        st.success("Dein neuer Plan ist jetzt aktiv!")
-                        st.balloons()
-                        if 'messages' in st.session_state: del st.session_state.messages
-                        if 'latest_plan_text' in st.session_state: del st.session_state.latest_plan_text
-                        time.sleep(1)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Ein Fehler ist beim Aktivieren des Plans aufgetreten: {e}")
+                full_response = get_chat_response(st.session_state.messages, user_profile)
+                
+                # Parse the response for a plan update
+                plan_update_match = re.search(r'<PLAN_UPDATE>(.*)</PLAN_UPDATE>', full_response, re.DOTALL)
+                
+                if plan_update_match:
+                    new_plan_text = plan_update_match.group(1).strip()
+                    st.session_state.latest_plan_text = new_plan_text
+                
+                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                st.rerun()
 
 def display_training_tab(user_profile: dict):
+    """Renders the currently active training plan."""
     st.header("Dein aktueller Plan")
     user_profile_uuid = user_profile.get('uuid')
     if not user_profile_uuid:
@@ -337,9 +344,9 @@ def display_training_tab(user_profile: dict):
             
             for exercise_name in exercise_order:
                 st.markdown(f"##### {exercise_name}")
-                exercise_group = workout_group[workout_group['exercise'] == exercise_name].sort_values('set')
+                exercise_group_sorted = workout_group[workout_group['exercise'] == exercise_name].sort_values('set')
                 
-                coach_msg = exercise_group.iloc[0].get('messageFromCoach')
+                coach_msg = exercise_group_sorted.iloc[0].get('messagefromcoach')
                 if coach_msg and str(coach_msg).strip():
                     st.info(f"💡 Tipp von Milo: {coach_msg}")
 
@@ -349,23 +356,24 @@ def display_training_tab(user_profile: dict):
                 header_cols[2].markdown("<p class='small-header'>Wdh.</p>", unsafe_allow_html=True)
                 header_cols[3].markdown("<p class='small-header'>RIR</p>", unsafe_allow_html=True)
 
-                for _, row in exercise_group.iterrows():
+                for _, row in exercise_group_sorted.iterrows():
                     cols = st.columns([1, 2, 2, 1, 2])
                     cols[0].write(f"**{row['set']}**")
                     new_weight = cols[1].number_input("Gewicht", value=float(row['weight']), key=f"w_{row['id']}", min_value=0.0, step=0.5, label_visibility="collapsed")
                     new_reps = cols[2].number_input("Wdh", value=int(row['reps']), key=f"r_{row['id']}", min_value=0, step=1, label_visibility="collapsed")
-                    new_rir = cols[3].number_input("RIR", value=int(row.get('rirDone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
+                    new_rir = cols[3].number_input("RIR", value=int(row.get('rirdone', 0) or 0), key=f"rir_{row['id']}", min_value=0, max_value=10, step=1, label_visibility="collapsed")
                     
                     if row['completed']:
                         cols[4].button("Erledigt ✅", key=f"done_{row['id']}", disabled=True, use_container_width=True)
                     else:
                         if cols[4].button("Abschließen", key=f"save_{row['id']}", type="primary", use_container_width=True):
-                            updates = {"weight": new_weight, "reps": new_reps, "rirDone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                            updates = {"weight": new_weight, "reps": new_reps, "rirdone": new_rir, "completed": True, "time": datetime.datetime.now(datetime.timezone.utc).isoformat()}
                             if update_workout_set(row['id'], updates): st.rerun()
                 
                 st.divider()
 
 def display_main_app_page(user_profile):
+    """Controls the main app layout with tabs."""
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
     tabs = ["🗓️ Training", "💬 Chat mit Milo", "👤 Profil"]

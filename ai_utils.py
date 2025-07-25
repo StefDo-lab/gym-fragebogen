@@ -86,7 +86,10 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                 explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                 if explanation_match: explanation = explanation_match.group(1).strip()
 
-                reps_for_db = int(reps_str_full)
+                # Extract the first number for the database
+                reps_for_db_match = re.search(r'\d+', reps_str_full)
+                reps_for_db = int(reps_for_db_match.group(0)) if reps_for_db_match else 10
+                
                 full_coach_message = f"Ziel: {reps_str_full} Wdh. {explanation}".strip()
 
                 for i in range(1, sets + 1):
@@ -94,26 +97,41 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                         'uuid': user_uuid, 'date': current_date, 'name': user_name,
                         'workout': current_workout, 'exercise': exercise_name, 'set': i, 
                         'weight': weight, 'reps': reps_for_db, 'unit': 'kg',
-                        'completed': False, 'messagetoCoach': '', 'messagefromCoach': full_coach_message,
-                        'rirdone': 0 
+                        'completed': False, 
+                        'messagetocoach': '',
+                        'messagefromcoach': full_coach_message,
+                        'rirdone': 0
                     })
             except Exception as e:
                 st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")
 
     return rows
 
-def get_chat_response(messages: list, user_profile: dict, history_analysis: str):
+def get_chat_response(messages: list, user_profile: dict):
     """Builds the prompt from the template and chat history, then gets a response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
     prompt_template = get_ai_prompt_template()
+    
+    # NEW: Dynamic instruction for the AI
+    dynamic_instruction = """
+WICHTIGE ANWEISUNG FÜR DIESE ANTWORT:
+1. Antworte zuerst in normaler Sprache auf die letzte Nachricht des Nutzers.
+2. WENN du den Trainingsplan als Reaktion auf die Nutzeranfrage geändert hast, füge NACH deiner normalen Antwort den kompletten, aktualisierten Plan in einem <PLAN_UPDATE> Tag hinzu. Beispiel: <PLAN_UPDATE>...neuer Plan...</PLAN_UPDATE>
+3. Der Plan im Tag MUSS vollständig sein und wieder TEIL 1 und TEIL 2 enthalten.
+4. Wenn du nur eine Frage beantwortest (z.B. zur Ernährung) und den Plan NICHT änderst, füge den <PLAN_UPDATE> Tag NICHT hinzu.
+
+Hier ist der bisherige Gesprächsverlauf:
+"""
+    
     chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+    full_user_request = dynamic_instruction + chat_history_text
     
     system_prompt_content = prompt_template.format(
         profile=user_profile,
-        history_analysis=history_analysis,
-        additional_info=chat_history_text, 
+        history_analysis="Die Trainingshistorie ist für den Nutzer im Chatverlauf sichtbar.",
+        additional_info=full_user_request, 
         training_days=user_profile.get("training_days_per_week", 3),
         split_type="passend zum Profil", 
         focus=user_profile.get("primary_goal", "Muskelaufbau"),
@@ -140,8 +158,7 @@ def get_initial_plan_response(user_profile: dict):
 
     prompt_template = get_ai_prompt_template()
     
-    # Create a specific initial prompt for the AI
-    initial_prompt_text = "Hallo Milo, hier ist ein neuer Athlet. Bitte erstelle einen ersten, passenden Trainingsplan-Vorschlag basierend auf dem Profil. Begrüsse den Athleten freundlich und erkläre ihm kurz, warum der Plan so aufgebaut ist."
+    initial_prompt_text = "Hallo Milo, hier ist ein neuer Athlet. Bitte erstelle einen ersten, passenden Trainingsplan-Vorschlag basierend auf dem Profil. Begrüsse den Athleten freundlich und erkläre ihm kurz, warum der Plan so aufgebaut ist. Formatiere die Antwort vollständig mit TEIL 1 und TEIL 2."
 
     system_prompt_content = prompt_template.format(
         profile=user_profile,

@@ -60,6 +60,8 @@ def display_login_page():
             password = st.text_input("Passwort", type="password")
             if st.form_submit_button("Account erstellen", use_container_width=True):
                 try:
+                    # For a real app, you might want to handle the confirmation email process.
+                    # For this dev version, we sign up and then immediately sign in.
                     res = supabase_auth_client.auth.sign_up({"email": email, "password": password})
                     if res.user:
                         st.success("Registrierung erfolgreich! Du wirst nun zum Fragebogen weitergeleitet.")
@@ -122,6 +124,7 @@ def _render_questionnaire_step2():
         experience_level = st.select_slider("Deine Trainingserfahrung", options=["Anfänger (0-1 Jahre)", "Fortgeschritten (1-3 Jahre)", "Erfahren (3+ Jahre)"], value=q_data.get("experience_level", "Anfänger (0-1 Jahre)"))
         training_days_per_week = st.slider("Wie viele Tage pro Woche möchtest du trainieren?", 1, 7, q_data.get("training_days_per_week", 3))
         time_per_session_minutes = st.slider("Wie viel Zeit hast du pro Einheit (in Minuten)?", 30, 120, q_data.get("time_per_session_minutes", 60), step=15)
+        use_rir = st.checkbox("Soll 'Reps in Reserve' (RIR) zur Steuerung der Intensität genutzt werden?", value=q_data.get("use_rir", False), help="RIR gibt an, wie viele Wiederholungen du am Ende eines Satzes noch geschafft hättest. RIR 2 bedeutet z.B., dass du noch 2 weitere Wiederholungen mit sauberer Technik geschafft hättest.")
         training_location = st.selectbox("Wo trainierst du hauptsächlich?", ["Voll ausgestattetes Fitnessstudio", "Home-Gym (Basisausstattung)", "Nur mit Körpergewicht"], index=["Voll ausgestattetes Fitnessstudio", "Home-Gym (Basisausstattung)", "Nur mit Körpergewicht"].index(q_data.get("training_location", "Voll ausgestattetes Fitnessstudio")))
         liked_equipment = st.text_input("Gibt es Ausrüstung, die du besonders gerne nutzt?", placeholder="z.B. Kettlebells, Langhantel", value=q_data.get("liked_equipment", ""))
         disliked_exercises = st.text_input("Gibt es Übungen, die du gar nicht magst?", placeholder="z.B. Kniebeugen, Burpees", value=q_data.get("disliked_exercises", ""))
@@ -142,7 +145,7 @@ def _render_questionnaire_step2():
             q_data.update({
                 "primary_goal": primary_goal, "secondary_goals": secondary_goals, "specific_goal_text": specific_goal_text,
                 "experience_level": experience_level, "training_days_per_week": training_days_per_week,
-                "time_per_session_minutes": time_per_session_minutes, "training_location": training_location,
+                "time_per_session_minutes": time_per_session_minutes, "use_rir": use_rir, "training_location": training_location,
                 "liked_equipment": liked_equipment, "disliked_exercises": disliked_exercises,
                 "job_activity_level": job_activity_level, "sleep_hours_avg": sleep_hours_avg, "nutrition_style": nutrition_style
             })
@@ -154,10 +157,11 @@ def _render_questionnaire_step2():
 
 def _render_questionnaire_step3():
     """Renders UI for Step 3: Gesundheits-Check and handles final submission."""
-    st.subheader("Schritt 3: Dein Gesundheits-Check")
+    st.subheader("Schritt 3: Dein Gesundheits-Check & Mindset")
     with st.form("step3_form"):
         q_data = st.session_state.questionnaire_data
         
+        st.write("##### Gesundheitliche Angaben")
         medical_topics = st.multiselect(
             "Welche der folgenden gesundheitlichen Themen treffen auf dich zu? (optional)",
             ["Kürzliche Operation", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme"],
@@ -166,17 +170,20 @@ def _render_questionnaire_step3():
         
         medical_notes = q_data.get("medical_notes", {})
         if "Kürzliche Operation" in medical_topics:
-            medical_notes['surgery'] = st.text_area("Bitte beschreibe die OP:", value=medical_notes.get('surgery', ''))
+            medical_notes['surgery'] = st.text_area("Bitte beschreibe die OP und was beachtet werden muss:", value=medical_notes.get('surgery', ''), key="surgery_details")
         if "Ausstrahlende Schmerzen" in medical_topics:
-            medical_notes['pain_details'] = st.text_area("Bitte beschreibe die ausstrahlenden Schmerzen:", value=medical_notes.get('pain_details', ''))
+            medical_notes['pain_details'] = st.text_area("Bitte beschreibe die ausstrahlenden Schmerzen (Wo? Wann? Wie stark?):", value=medical_notes.get('pain_details', ''), key="pain_details")
         if "Bandscheibenvorfall" in medical_topics:
-             medical_notes['disc_issue'] = st.text_area("Bitte beschreibe die Bandscheiben-Thematik:", value=medical_notes.get('disc_issue', ''))
+             medical_notes['disc_issue'] = st.text_area("Bitte beschreibe die Bandscheiben-Thematik (Wo? Akut oder verheilt?):", value=medical_notes.get('disc_issue', ''), key="disc_details")
 
         st.text_area("Gibt es aktuelle Schmerzen oder Verletzungen, die dein Training beeinflussen könnten?", key="pain_and_injury_notes", value=q_data.get("pain_and_injury_notes", ""))
         st.text_area("Weitere Anmerkungen zu deiner Gesundheit (optional)", key="other_health_notes", value=q_data.get("other_health_notes", ""))
 
         st.divider()
+        st.write("##### Mindset & Erholung")
+        sleep_quality_rating = st.slider("Wie bewertest du deine Schlafqualität (1=schlecht, 10=hervorragend)?", 1, 10, q_data.get("sleep_quality_rating", 7))
         stress_level_rating = st.slider("Wie ist dein aktuelles Stresslevel (1=entspannt, 10=sehr hoch)?", 1, 10, q_data.get("stress_level_rating", 5))
+        motivation_level = st.slider("Wie motiviert bist du gerade auf einer Skala von 1-10?", 1, 10, q_data.get("motivation_level", 8), help="1 = 'Ich muss mich zwingen', 10 = 'Ich könnte Bäume ausreißen!'")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -191,7 +198,9 @@ def _render_questionnaire_step3():
                 "medical_notes": medical_notes,
                 "pain_and_injury_notes": st.session_state.pain_and_injury_notes,
                 "other_health_notes": st.session_state.other_health_notes,
-                "stress_level_rating": stress_level_rating
+                "sleep_quality_rating": sleep_quality_rating,
+                "stress_level_rating": stress_level_rating,
+                "motivation_level": motivation_level
             })
 
             with st.spinner("Speichere deine Antworten..."):
@@ -215,6 +224,7 @@ def _render_questionnaire_step3():
                     "training_location": q_data.get("training_location"),
                     "experience_level": q_data.get("experience_level"),
                     "primary_goal": q_data.get("primary_goal"),
+                    "use_rir": q_data.get("use_rir"),
                     "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),
                 }
 
@@ -224,11 +234,12 @@ def _render_questionnaire_step3():
                     "specific_goal_text": q_data.get("specific_goal_text"),
                     "liked_equipment": q_data.get("liked_equipment"),
                     "disliked_exercises": q_data.get("disliked_exercises"),
+                    "sleep_quality_rating": q_data.get("sleep_quality_rating"),
                     "stress_level_rating": q_data.get("stress_level_rating"),
+                    "motivation_level": q_data.get("motivation_level"),
                     "medical_notes": q_data.get("medical_notes"),
                     "pain_and_injury_notes": q_data.get("pain_and_injury_notes"),
                     "other_health_notes": q_data.get("other_health_notes"),
-                    # Add any other future fields here
                 }
                 db_payload["context_and_preferences"] = context_payload
                 

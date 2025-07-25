@@ -28,19 +28,16 @@ def inject_mobile_styles():
     """, unsafe_allow_html=True)
 
 def display_milo_logo():
-    """Displays the Coach Milo logo."""
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true" 
     try:
         st.image(logo_url, width=120)
     except Exception as e:
         st.warning(f"Logo konnte nicht geladen werden. Bitte URL prüfen. Fehler: {e}")
 
-
 # --- Page Rendering Functions ---
 def display_login_page():
     display_milo_logo()
     st.title("Willkommen bei Coach Milo")
-    st.info("Dein persönlicher KI-Coach, der dich wirklich versteht.")
     mode = st.radio("Wähle eine Option:", ["Einloggen", "Registrieren"], horizontal=True, label_visibility="collapsed")
     if mode == "Einloggen":
         with st.form("login_form"):
@@ -68,14 +65,106 @@ def display_login_page():
                 except Exception:
                     st.error("Registrierung fehlgeschlagen. Ist die E-Mail schon vergeben?")
 
+
 def display_questionnaire_page():
-    st.header("Fragebogen")
-    st.info("Dieser Bereich ist für den Fragebogen für neue Nutzer vorgesehen.")
-    if st.button("Fragebogen (simuliert) abschicken"):
-        st.session_state.user_profile = {"uuid": str(uuid.uuid4()), "forename": "Test", "surename": "User", "email": "test@test.com"}
-        st.success("Fragebogen gespeichert!")
-        time.sleep(1)
-        st.rerun()
+    """
+    Displays the new, structured questionnaire for new users.
+    """
+    st.header("Hallo! Willkommen bei Coach Milo.")
+    st.info("Damit ich den perfekten Plan für dich erstellen kann, brauche ich ein paar Informationen. Das dauert nur 2-3 Minuten.")
+
+    with st.form("new_questionnaire_form"):
+        tab1, tab2, tab3 = st.tabs(["Schritt 1: Stammdaten", "Schritt 2: Ziele & Training", "Schritt 3: Gesundheits-Check"])
+
+        with tab1:
+            st.subheader("Deine Kontaktdaten")
+            forename = st.text_input("Vorname *")
+            surename = st.text_input("Nachname *")
+            email = st.text_input("E-Mail-Adresse *", value=st.session_state.user.email, disabled=True)
+            today = datetime.date.today()
+            birthday = st.date_input("Geburtsdatum *", min_value=today.replace(year=today.year - 100), max_value=today.replace(year=today.year - 16), value=today.replace(year=today.year - 25))
+
+        with tab2:
+            st.subheader("Deine Ziele & dein Training")
+            primary_goal = st.selectbox("Was ist dein Hauptziel?", ["Muskelaufbau", "Gewichtsreduktion", "Kraft steigern", "Fitness & Gesundheit", "Rücken stärken"])
+            experience_level = st.select_slider("Deine Trainingserfahrung", options=["Anfänger (0-1 Jahre)", "Fortgeschritten (1-3 Jahre)", "Erfahren (3+ Jahre)"])
+            
+            st.divider()
+            
+            training_days_per_week = st.slider("Wie viele Tage pro Woche möchtest du trainieren?", 1, 7, 3)
+            time_per_session_minutes = st.slider("Wie viel Zeit hast du pro Einheit (in Minuten)?", 30, 120, 60, step=15)
+            training_location = st.selectbox("Wo trainierst du hauptsächlich?", ["Voll ausgestattetes Fitnessstudio", "Home-Gym (Basisausstattung)", "Nur mit Körpergewicht"])
+            
+            st.divider()
+
+            other_activities_per_week = st.number_input("Wie viele weitere anstrengende Sporteinheiten hast du pro Woche (Fußball, Laufen etc.)?", 0, 10, 0)
+            other_activities_description = st.text_input("Welche Sportarten sind das?", placeholder="z.B. Fußball, Laufen, Tennis")
+
+            st.subheader("Deine Vorlieben")
+            liked_equipment = st.text_input("Gibt es Ausrüstung, die du besonders gerne nutzt?", placeholder="z.B. Kettlebells, Langhantel")
+            disliked_exercises = st.text_input("Gibt es Übungen, die du gar nicht magst?", placeholder="z.B. Kniebeugen, Burpees")
+
+        with tab3:
+            st.subheader("Dein Gesundheits-Check")
+            
+            medical_topics = st.multiselect(
+                "Welche der folgenden gesundheitlichen Themen treffen auf dich zu? (Mehrfachauswahl möglich)",
+                ["Kürzliche Operation (letzte 18 Monate)", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme", "Andere wichtige Themen"]
+            )
+            
+            medical_notes = {}
+            if "Kürzliche Operation (letzte 18 Monate)" in medical_topics:
+                medical_notes['surgery'] = st.text_area("Bitte beschreibe die OP:", key="surgery_details")
+            if "Ausstrahlende Schmerzen" in medical_topics:
+                medical_notes['pain_details'] = st.text_area("Bitte beschreibe die Schmerzen:", key="pain_details")
+            # ... (weitere Textfelder für andere medizinische Themen) ...
+
+            st.divider()
+            
+            sleep_quality_rating = st.slider("Wie bewertest du deine Schlafqualität (1=schlecht, 10=hervorragend)?", 1, 10, 7)
+            stress_level_rating = st.slider("Wie ist dein aktuelles Stresslevel (1=entspannt, 10=sehr hoch)?", 1, 10, 5)
+
+        submitted = st.form_submit_button("Meine Antworten an Milo senden", type="primary")
+
+        if submitted:
+            if not forename or not surename:
+                st.error("Bitte fülle mindestens Vorname und Nachname aus.")
+            else:
+                db_payload = {
+                    "auth_user_id": st.session_state.user.id,
+                    "uuid": str(uuid.uuid4()),
+                    "forename": forename,
+                    "surename": surename,
+                    "email": email,
+                    "birthday": str(birthday),
+                    "training_days_per_week": training_days_per_week,
+                    "time_per_session_minutes": time_per_session_minutes,
+                    "training_location": training_location,
+                    "experience_level": experience_level,
+                    "primary_goal": primary_goal,
+                    "other_activities_per_week": other_activities_per_week,
+                    "has_restrictions": len(medical_topics) > 0,
+                }
+
+                context_payload = {
+                    "other_activities_description": other_activities_description,
+                    "liked_equipment": liked_equipment,
+                    "disliked_exercises": disliked_exercises,
+                    "sleep_quality_rating": sleep_quality_rating,
+                    "stress_level_rating": stress_level_rating,
+                    "medical_notes": medical_notes
+                }
+                db_payload["context_and_preferences"] = context_payload
+                
+                response = insert_questionnaire_data(db_payload)
+                if response:
+                    st.success("Super, danke! Ich habe alle Informationen. Lass uns jetzt deinen ersten Plan erstellen.")
+                    st.balloons()
+                    st.session_state.user_profile = db_payload
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("Es gab einen Fehler beim Speichern deiner Antworten.")
 
 def render_chat_tab(user_profile):
     st.header("Planung mit Milo")
@@ -87,7 +176,8 @@ def render_chat_tab(user_profile):
     for message in st.session_state.messages:
         avatar_icon = logo_url if message["role"] == "assistant" else "🧑"
         with st.chat_message(message["role"], avatar=avatar_icon):
-            st.markdown(message["content"])
+            cleaned_content = message["content"].replace("<analyse>", "").replace("</analyse>", "").replace("<plan>", "").replace("</plan>", "")
+            st.markdown(cleaned_content)
 
     if prompt := st.chat_input("Was möchtest du trainieren?"):
         st.session_state.messages.append({"role": "user", "content": prompt})
@@ -99,10 +189,11 @@ def render_chat_tab(user_profile):
                 history_analysis = "Keine Trainingshistorie zur Analyse vorhanden."
                 additional_info = {"text": "Keine besonderen Wünsche"}
                 
-                # KORRIGIERT: Übergibt die gesamte Konversation (st.session_state.messages) für den Kontext
                 response = get_chat_response(st.session_state.messages, user_profile, history_analysis, additional_info)
                 
-                st.markdown(response)
+                display_response = response.replace("<analyse>", "").replace("</analyse>", "").replace("<plan>", "\n\n").replace("</plan>", "")
+                
+                st.markdown(display_response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.session_state.latest_plan_text = response
     

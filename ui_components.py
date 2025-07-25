@@ -11,7 +11,7 @@ from supabase_utils import (
     load_user_workouts, update_workout_set, add_set, delete_set,
     delete_exercise, add_exercise, delete_workout
 )
-from ai_utils import get_chat_response, parse_ai_plan_to_rows
+from ai_utils import get_initial_plan_response, get_chat_response, parse_ai_plan_to_rows
 
 # --- General UI Components ---
 def inject_mobile_styles():
@@ -165,15 +165,12 @@ def _render_questionnaire_step3():
             ["Kürzliche Operation", "Ausstrahlende Schmerzen", "Bandscheibenvorfall", "Bluthochdruck", "Herzprobleme"],
             default=q_data.get("medical_topics", [])
         )
-
-        # WORKAROUND: Permanent text area for details
         st.text_area(
             "Falls du oben eine oder mehrere Optionen ausgewählt hast, beschreibe sie hier bitte im Detail.",
-            placeholder="z.B. Bandscheibenvorfall HWS vor 5 Jahren, komplett verheilt. Oder: Knie-OP links vor 6 Monaten, beuge nur bis 90 Grad.",
+            placeholder="z.B. Bandscheibenvorfall HWS vor 5 Jahren, komplett verheilt.",
             key="medical_topics_details",
             value=q_data.get("medical_topics_details", "")
         )
-
         st.text_area("Gibt es aktuelle Schmerzen oder Verletzungen, die dein Training beeinflussen könnten?", key="pain_and_injury_notes", value=q_data.get("pain_and_injury_notes", ""))
         st.text_area("Weitere Anmerkungen zu deiner Gesundheit (optional)", key="other_health_notes", value=q_data.get("other_health_notes", ""))
 
@@ -190,7 +187,6 @@ def _render_questionnaire_step3():
             submitted = st.form_submit_button("Meine Antworten an Milo senden", type="primary")
 
         if submitted:
-            # Save final data from this step
             q_data.update({
                 "medical_topics": medical_topics,
                 "medical_topics_details": st.session_state.medical_topics_details,
@@ -203,51 +199,34 @@ def _render_questionnaire_step3():
 
             with st.spinner("Speichere deine Antworten..."):
                 db_payload = {
-                    # Dedicated columns
-                    "auth_user_id": st.session_state.user.id,
-                    "uuid": str(uuid.uuid4()),
-                    "forename": q_data.get("forename"),
-                    "surename": q_data.get("surename"),
-                    "email": st.session_state.user.email,
-                    "birthday": str(q_data.get("birthday")),
-                    "height_cm": q_data.get("height_cm"),
-                    "weight_kg": q_data.get("weight_kg"),
-                    "bodyfat_percentage": q_data.get("bodyfat_percentage"),
-                    "job_activity_level": q_data.get("job_activity_level"),
-                    "sleep_hours_avg": q_data.get("sleep_hours_avg"),
-                    "nutrition_style": q_data.get("nutrition_style"),
-                    "training_days_per_week": q_data.get("training_days_per_week"),
-                    "time_per_session_minutes": q_data.get("time_per_session_minutes"),
-                    "training_location": q_data.get("training_location"),
-                    "experience_level": q_data.get("experience_level"),
-                    "primary_goal": q_data.get("primary_goal"),
-                    "use_rir": q_data.get("use_rir"),
+                    "auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()),
+                    "forename": q_data.get("forename"), "surename": q_data.get("surename"),
+                    "email": st.session_state.user.email, "birthday": str(q_data.get("birthday")),
+                    "height_cm": q_data.get("height_cm"), "weight_kg": q_data.get("weight_kg"),
+                    "bodyfat_percentage": q_data.get("bodyfat_percentage"), "job_activity_level": q_data.get("job_activity_level"),
+                    "sleep_hours_avg": q_data.get("sleep_hours_avg"), "nutrition_style": q_data.get("nutrition_style"),
+                    "training_days_per_week": q_data.get("training_days_per_week"), "time_per_session_minutes": q_data.get("time_per_session_minutes"),
+                    "training_location": q_data.get("training_location"), "experience_level": q_data.get("experience_level"),
+                    "primary_goal": q_data.get("primary_goal"), "use_rir": q_data.get("use_rir"),
                     "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),
                 }
-
-                # Context JSONB column
                 context_payload = {
-                    "secondary_goals": q_data.get("secondary_goals"),
-                    "specific_goal_text": q_data.get("specific_goal_text"),
-                    "liked_equipment": q_data.get("liked_equipment"),
-                    "disliked_exercises": q_data.get("disliked_exercises"),
-                    "sleep_quality_rating": q_data.get("sleep_quality_rating"),
-                    "stress_level_rating": q_data.get("stress_level_rating"),
-                    "motivation_level": q_data.get("motivation_level"),
-                    "medical_topics_details": q_data.get("medical_topics_details"),
-                    "pain_and_injury_notes": q_data.get("pain_and_injury_notes"),
-                    "other_health_notes": q_data.get("other_health_notes"),
+                    "secondary_goals": q_data.get("secondary_goals"), "specific_goal_text": q_data.get("specific_goal_text"),
+                    "liked_equipment": q_data.get("liked_equipment"), "disliked_exercises": q_data.get("disliked_exercises"),
+                    "sleep_quality_rating": q_data.get("sleep_quality_rating"), "stress_level_rating": q_data.get("stress_level_rating"),
+                    "motivation_level": q_data.get("motivation_level"), "medical_topics_details": q_data.get("medical_topics_details"),
+                    "pain_and_injury_notes": q_data.get("pain_and_injury_notes"), "other_health_notes": q_data.get("other_health_notes"),
                 }
                 db_payload["context_and_preferences"] = context_payload
                 
                 response = insert_questionnaire_data(db_payload)
                 if response:
-                    st.success("Super, danke! Ich habe alle Informationen.")
-                    st.balloons()
+                    st.success("Super, danke! Dein Profil ist gespeichert.")
                     st.session_state.user_profile = db_payload
                     del st.session_state.questionnaire_step
                     del st.session_state.questionnaire_data
-                    time.sleep(2)
+                    st.session_state.run_initial_plan_generation = True
+                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error("Es gab einen Fehler beim Speichern deiner Antworten.")
@@ -255,7 +234,6 @@ def _render_questionnaire_step3():
         if back_clicked:
             st.session_state.questionnaire_step = 2
             st.rerun()
-
 
 def display_questionnaire_page():
     """Controls the multi-step questionnaire flow."""
@@ -278,42 +256,44 @@ def display_questionnaire_page():
         _render_questionnaire_step3()
 
 
-# --- Main App Display (remains mostly unchanged) ---
+# --- Main App Display ---
 
 def render_chat_tab(user_profile):
     st.header("Planung mit Milo")
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true"
 
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "Hallo! Ich bin Milo. Wollen wir einen neuen Trainingsplan erstellen?"}]
+        st.session_state.messages = []
+
+    if st.session_state.get("run_initial_plan_generation", False):
+        st.session_state.run_initial_plan_generation = False 
+        with st.spinner("Milo analysiert dein Profil und erstellt einen ersten Plan-Vorschlag..."):
+            initial_plan = get_initial_plan_response(user_profile)
+            st.session_state.messages.append({"role": "assistant", "content": initial_plan})
+            st.session_state.latest_plan_text = initial_plan
+            st.rerun() 
     
+    if not st.session_state.messages:
+        st.info("Hier beginnt dein Gespräch mit Milo. Nach dem Fragebogen wird er dir hier einen ersten Plan vorschlagen.")
+
     for message in st.session_state.messages:
         avatar_icon = logo_url if message["role"] == "assistant" else "🧑"
         with st.chat_message(message["role"], avatar=avatar_icon):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("Was möchtest du trainieren?"):
+    if prompt := st.chat_input("Stelle Fragen oder gib Änderungswünsche ein"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="🧑"):
             st.markdown(prompt)
 
         with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
-                history_analysis = "Keine Trainingshistorie zur Analyse vorhanden."
-                chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in st.session_state.messages])
-                
-                response = get_chat_response(
-                    messages=st.session_state.messages, 
-                    user_profile=user_profile, 
-                    history_analysis=history_analysis, 
-                    additional_info={"text_from_chat": chat_history_text}
-                )
-                
+                response = get_chat_response(st.session_state.messages, user_profile, "N/A")
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.session_state.latest_plan_text = response
     
-    if 'latest_plan_text' in st.session_state:
+    if 'latest_plan_text' in st.session_state and st.session_state.latest_plan_text:
         st.divider()
         if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True):
             with st.spinner("Plan wird aktiviert..."):
@@ -388,7 +368,12 @@ def display_training_tab(user_profile: dict):
 def display_main_app_page(user_profile):
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
-    tab1, tab2, tab3 = st.tabs(["🗓️ Training", "💬 Chat mit Milo", "👤 Profil"])
+    tabs = ["🗓️ Training", "💬 Chat mit Milo", "👤 Profil"]
+    
+    if st.session_state.get("run_initial_plan_generation", False):
+        st.info("🤖 Milo erstellt deinen ersten Plan-Vorschlag im 'Chat mit Milo'-Tab. Bitte wechsle dorthin, um ihn zu sehen.")
+
+    tab1, tab2, tab3 = st.tabs(tabs)
     
     with tab1:
         display_training_tab(user_profile)

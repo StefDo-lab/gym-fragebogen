@@ -48,7 +48,6 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     user_uuid = user_profile.get("uuid")
     user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
 
-    # Isoliere TEIL 2 - DER TRAININGSPLAN
     plan_section = plan_text
     if "TEIL 2 - DER TRAININGSPLAN" in plan_text:
         plan_section = plan_text.split("TEIL 2 - DER TRAININGSPLAN", 1)[1]
@@ -60,12 +59,10 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # Match workout titles like **Workout Name:**
         if line.startswith('**') and line.endswith(':'):
             current_workout = line.strip('*').strip(':').strip()
             continue
 
-        # Match exercise lines
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
         if exercise_match:
             exercise_name = exercise_match.group(1).strip()
@@ -96,39 +93,66 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                     rows.append({
                         'uuid': user_uuid, 'date': current_date, 'name': user_name,
                         'workout': current_workout, 'exercise': exercise_name, 'set': i, 
-                        'weight': weight, 'reps': reps_for_db, 'unit': 'kg', 'type': '', 
+                        'weight': weight, 'reps': reps_for_db, 'unit': 'kg',
                         'completed': False, 'messageToCoach': '', 'messageFromCoach': full_coach_message,
-                        'rirSuggested': 0, 'rirDone': 0, 'generalStatementFrom': '', 'generalStatementTo': '',
-                        'dummy1': '', 'dummy2': '', 'dummy3': '', 'dummy4': '', 'dummy5': '',
-                        'dummy6': '', 'dummy7': '', 'dummy8': '', 'dummy9': '', 'dummy10': ''
+                        'rirDone': 0 
                     })
             except Exception as e:
                 st.warning(f"Konnte Zeile nicht verarbeiten: '{line}' ({e})")
 
     return rows
 
-def get_chat_response(messages: list, user_profile: dict, history_analysis: str, additional_info: dict):
+def get_chat_response(messages: list, user_profile: dict, history_analysis: str):
     """Builds the prompt from the template and chat history, then gets a response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
     prompt_template = get_ai_prompt_template()
-    
-    # Baue den Chat-Verlauf als einfachen Text zusammen
     chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
     
-    # Die "zusätzlichen Wünsche" sind jetzt der gesamte Chatverlauf
     system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis=history_analysis,
-        additional_info=chat_history_text, # Hier wird der Kontext übergeben
-        training_days=additional_info.get("training_days", 3),
-        split_type=additional_info.get("split_type", "Ganzkörper"),
-        focus=additional_info.get("focus", "Muskelaufbau"),
-        weight_instruction="Basiere die Gewichte auf der Trainingshistorie."
+        additional_info=chat_history_text, 
+        training_days=user_profile.get("training_days_per_week", 3),
+        split_type="passend zum Profil", 
+        focus=user_profile.get("primary_goal", "Muskelaufbau"),
+        weight_instruction="Basiere die Gewichte auf der Trainingshistorie oder schlage für Anfänger passende Startgewichte vor."
     )
 
-    # Wir senden nur den System-Prompt, da der Verlauf schon enthalten ist
+    messages_to_send = [{"role": "user", "content": system_prompt_content}]
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages_to_send,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
+        return "Es tut mir leid, es gab ein Problem bei der Verbindung zur KI."
+
+def get_initial_plan_response(user_profile: dict):
+    """Generates the very first plan proposal based on the questionnaire data."""
+    if not ai_client:
+        return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
+
+    prompt_template = get_ai_prompt_template()
+    
+    # Create a specific initial prompt for the AI
+    initial_prompt_text = "Hallo Milo, hier ist ein neuer Athlet. Bitte erstelle einen ersten, passenden Trainingsplan-Vorschlag basierend auf dem Profil. Begrüsse den Athleten freundlich und erkläre ihm kurz, warum der Plan so aufgebaut ist."
+
+    system_prompt_content = prompt_template.format(
+        profile=user_profile,
+        history_analysis="Keine Trainingshistorie vorhanden, da der Nutzer neu ist.",
+        additional_info=initial_prompt_text,
+        training_days=user_profile.get("training_days_per_week", 3),
+        split_type="passend zum Profil",
+        focus=user_profile.get("primary_goal", "Muskelaufbau"),
+        weight_instruction="Schlage für Anfänger passende Startgewichte vor. Für Fortgeschrittene, gib Platzhalter an."
+    )
+
     messages_to_send = [{"role": "user", "content": system_prompt_content}]
 
     try:

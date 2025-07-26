@@ -46,6 +46,8 @@ Fokus: {focus}
 
 Mach dir aus den Angaben deiner Kunden ein möglichst genaues Bild und beziehe alle verfügbaren Angaben ein. Es steht dir ein voll ausgestattetes Gym zur Verfügung.
 
+Kundenwünsche gehen vor. Angaben aus dem Chat überschreiben die Angaben aus dem Profil. Wenn im Profil beispielsweise festgehalten ist, dass der User 5 Tage die Woche trainiert, er im Chat aber mitteilt, dass er z.B. nur an drei Tagen die Woche trainieren will, mach nur einen plan für drei Tage.
+
 FORMATIERUNGSREGELN FÜR DEN TRAININGSPLAN:
 
 Erstelle GENAU {training_days} Trainingstage

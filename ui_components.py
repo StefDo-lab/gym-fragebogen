@@ -10,9 +10,9 @@ import re
 from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data,
     load_user_workouts, update_workout_set, add_set, delete_set,
-    delete_exercise, add_exercise, delete_workout
+    delete_exercise, add_exercise, delete_workout, archive_workout_and_analyze
 )
-from ai_utils import get_initial_plan_response, get_chat_response, parse_ai_plan_to_rows
+from ai_utils import get_initial_plan_response, get_chat_response, parse_ai_plan_to_rows, get_workout_feedback
 
 # --- General UI Components ---
 def inject_mobile_styles():
@@ -296,6 +296,22 @@ def display_training_tab(user_profile: dict):
     for workout_name in workout_order:
         with st.expander(f"**{workout_name}**", expanded=True):
             workout_group = df[df['workout'] == workout_name].copy()
+            
+            # --- NEW: Logic for the "Finish Workout" button ---
+            all_sets_completed = all(workout_group['completed'])
+            if st.button("Workout abschließen & Feedback erhalten", key=f"finish_wo_{workout_name}", disabled=not all_sets_completed, use_container_width=True, type="primary"):
+                with st.spinner("Milo schaut sich deine Leistung an..."):
+                    success, analysis = archive_workout_and_analyze(user_profile_uuid, workout_name)
+                    if success:
+                        feedback = get_workout_feedback(analysis)
+                        st.success(feedback)
+                        st.balloons()
+                        # Potentially add a "Share PR" button here
+                        time.sleep(3)
+                        st.rerun()
+                    else:
+                        st.error(analysis)
+
             exercise_order = workout_group.groupby('exercise')['id'].min().sort_values().index.tolist()
             
             for exercise_name in exercise_order:

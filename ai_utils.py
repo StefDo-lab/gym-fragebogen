@@ -159,10 +159,14 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        workout_title_match = re.match(r'^\s*\*+\s*(Workout [A-Z]|Tag \d+|Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag|Push|Pull|Legs|Oberkörper|Unterkörper|Ganzkörper)[^:\n]*\s*\*+[:]?$', line, re.IGNORECASE)
+        # FINALE KORREKTUR: Diese Regex ist jetzt robust und erkennt JEDE fettgedruckte Zeile als potenziellen Titel.
+        workout_title_match = re.match(r'^\s*\*+(.+?)\*+[:]?\s*$', line)
         
-        if workout_title_match:
-            cleaned_title = workout_title_match.group(0).replace('*', '').replace(':', '').strip()
+        # Zusätzliche Prüfung: Ein Titel sollte keine typischen Übungsdetails enthalten.
+        is_exercise_line = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', line)
+
+        if workout_title_match and not is_exercise_line:
+            cleaned_title = workout_title_match.group(1).strip() # Gruppe 1 ist der Text *innerhalb* der Sterne
             current_workout = cleaned_title
             continue
 
@@ -225,17 +229,13 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
 
     prompt_template = get_ai_prompt_template()
     
-    # NEU: Kombinierte Logik für die Anforderung
     if plan_request_params:
-        # Fall 1: Button wurde geklickt
         comment = plan_request_params.get('comment', '')
         additional_info = f"Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an. Zusätzlicher Wunsch: '{comment}'" if comment else "Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an."
         training_days = plan_request_params.get('days')
         split_type = plan_request_params.get('split')
         focus = plan_request_params.get('focus')
     else:
-        # Fall 2: Normaler Chat (iterative Verbesserung)
-        # Hier fügen wir die spezielle Anweisung für iterative Updates hinzu
         iterative_instruction = (
             "WICHTIGE ANWEISUNG FÜR DIESE ANTWORT:\n"
             "1. Antworte zuerst in normaler Sprache auf die letzte Nachricht des Nutzers.\n"
@@ -246,9 +246,8 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
         chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
         additional_info = iterative_instruction + chat_history_text
         
-        # Parameter aus dem Profil als Standard nehmen
         training_days = user_profile.get('training_days_per_week', 3)
-        split_type = "passend zum Profil" # KI soll den besten Split wählen
+        split_type = "passend zum Profil"
         focus = user_profile.get('primary_goal', 'Muskelaufbau')
 
     system_prompt_content = prompt_template.format(

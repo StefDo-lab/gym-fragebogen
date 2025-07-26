@@ -59,8 +59,10 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        if line.startswith('**') and line.endswith(':'):
-            current_workout = line.strip('*').strip(':').strip()
+        # CORRECTED: More robust regex to catch workout titles like **Workout:** or *Tag 1*
+        workout_title_match = re.match(r'^\s*\*+\s*(.*?)\s*\*+[:]?$', line)
+        if workout_title_match:
+            current_workout = workout_title_match.group(1).strip()
             continue
 
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
@@ -80,13 +82,12 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
                 elif "körpergewicht" in details.lower() or "bw" in details.lower():
                     weight = 0.0
 
-                reps_match = re.search(r'(\d+)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
+                reps_match = re.search(r'(\d+(?:-\d+)?)\s*(?:Wdh|Wiederholungen|reps)', details, re.IGNORECASE)
                 if reps_match: reps_str_full = reps_match.group(1).strip()
 
                 explanation_match = re.search(r'\((?:Fokus|Erklärung):\s*(.+)\)$', details)
                 if explanation_match: explanation = explanation_match.group(1).strip()
 
-                # Extract the first number for the database
                 reps_for_db_match = re.search(r'\d+', reps_str_full)
                 reps_for_db = int(reps_for_db_match.group(0)) if reps_for_db_match else 10
                 
@@ -114,7 +115,6 @@ def get_chat_response(messages: list, user_profile: dict):
 
     prompt_template = get_ai_prompt_template()
     
-    # NEW: Dynamic instruction for the AI
     dynamic_instruction = """
 WICHTIGE ANWEISUNG FÜR DIESE ANTWORT:
 1. Antworte zuerst in normaler Sprache auf die letzte Nachricht des Nutzers.

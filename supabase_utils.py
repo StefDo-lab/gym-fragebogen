@@ -23,6 +23,8 @@ supabase_auth_client = init_supabase_client()
 
 # --- App-specific Database Functions ---
 
+# ... (alle bisherigen Funktionen wie check_user_profile_exists, load_user_workouts etc. bleiben unverändert) ...
+
 def check_user_profile_exists(auth_user_id: str):
     """
     Checks if a questionnaire profile exists for a given auth user ID.
@@ -64,7 +66,6 @@ def load_user_workouts(user_profile_uuid: str) -> list:
         st.error(f"Fehler beim Laden der Workouts: {e}")
         return []
 
-# --- NEUE FUNKTION ZUM LADEN DER WORKOUT-HISTORIE ---
 def load_workout_history(user_uuid: str) -> list:
     """Loads all workout history for a user from the 'workouts_history' table."""
     try:
@@ -196,3 +197,48 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
     except Exception as e:
         st.error(f"Fehler beim Archivieren des Workouts: {e}")
         return False, f"Fehler: {e}"
+
+# --- NEUE FUNKTION FÜR DIE ÜBUNGSDATENBANK ---
+def load_filtered_exercises(user_profile: dict) -> list:
+    """
+    Loads exercises from the database, filtered by the user's profile.
+    This is the scalable server-side filtering approach.
+    """
+    try:
+        query = supabase_auth_client.table("exercises").select("*")
+
+        # 1. Filter by Difficulty based on Experience
+        experience = user_profile.get("experience_level", "Anfänger (0-1 Jahre)")
+        if "Anfänger" in experience:
+            # Anfänger bekommen Anfänger- und Fortgeschrittenen-Übungen
+            query = query.in_("difficulty", ["Anfänger", "Fortgeschritten"])
+        elif "Fortgeschritten" in experience:
+            # Fortgeschrittene bekommen alle Schwierigkeitsgrade
+            query = query.in_("difficulty", ["Anfänger", "Fortgeschritten", "Experte"])
+        elif "Erfahren" in experience:
+            # Erfahrene bekommen Fortgeschrittenen- und Experten-Übungen
+            query = query.in_("difficulty", ["Fortgeschritten", "Experte"])
+
+        # 2. Filter by available Equipment
+        location = user_profile.get("training_location", "Voll ausgestattetes Fitnessstudio")
+        if location == "Nur mit Körpergewicht":
+            query = query.eq("equipment", "Körpergewicht")
+        elif location == "Home-Gym (Basisausstattung)":
+            # Hier nehmen wir an, dass ein Home-Gym keine großen Maschinen hat
+            query = query.not_.ilike("equipment", "%Maschine%")
+
+        # 3. Filter out disliked exercises
+        disliked_raw = user_profile.get("context_and_preferences", {}).get("disliked_exercises", "")
+        if disliked_raw:
+            disliked_list = [ex.strip() for ex in disliked_raw.split(',') if ex.strip()]
+            if disliked_list:
+                for ex in disliked_list:
+                    # 'ilike' für eine case-insensitive Suche
+                    query = query.not_.ilike("name", f"%{ex}%")
+
+        response = query.execute()
+        return response.data if response.data else []
+
+    except Exception as e:
+        st.error(f"Fehler beim Laden der gefilterten Übungen: {e}")
+        return []

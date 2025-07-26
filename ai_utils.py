@@ -6,7 +6,7 @@ import re
 from openai import OpenAI
 import datetime
 import pandas as pd
-from supabase_utils import load_workout_history
+from supabase_utils import load_workout_history, load_filtered_exercises # NEUER IMPORT
 from dateutil.relativedelta import relativedelta
 
 # --- OpenAI Client Initialization ---
@@ -123,6 +123,20 @@ def analyze_workout_history(history_data: list):
     summary = "\n".join(analysis_parts)
     return summary, df
 
+# --- NEUE HILFSFUNKTION ---
+def format_exercises_for_milo(exercises: list) -> str:
+    """Formats the filtered list of exercises into a simple text string for the AI prompt."""
+    if not exercises:
+        return "Keine passenden Übungen in der Datenbank gefunden."
+    
+    formatted_lines = []
+    for ex in exercises:
+        # Wir geben Milo die wichtigsten Infos an die Hand
+        line = f"- Name: {ex['name']}, Muskelgruppe: {ex['muscle_group']}, Hinweise: {ex.get('notes_for_milo', 'Keine')}"
+        formatted_lines.append(line)
+        
+    return "\n".join(formatted_lines)
+
 # --- AI Prompt and Plan Parsing Functions ---
 
 def get_ai_prompt_template():
@@ -138,9 +152,7 @@ def get_ai_prompt_template():
         return "Erstelle einen Trainingsplan für: {user_request}"
 
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
-    """
-    Parses the AI-generated plan text.
-    """
+    # ... (diese Funktion bleibt unverändert) ...
     rows = []
     current_date = datetime.date.today().isoformat()
     current_workout = None 
@@ -159,14 +171,11 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # FINALE KORREKTUR: Diese Regex ist jetzt robust und erkennt JEDE fettgedruckte Zeile als potenziellen Titel.
         workout_title_match = re.match(r'^\s*\*+(.+?)\*+[:]?\s*$', line)
-        
-        # Zusätzliche Prüfung: Ein Titel sollte keine typischen Übungsdetails enthalten.
         is_exercise_line = re.search(r'(\d+)\s*(?:x|[Ss]ätze|[Ss]ets)', line)
 
         if workout_title_match and not is_exercise_line:
-            cleaned_title = workout_title_match.group(1).strip() # Gruppe 1 ist der Text *innerhalb* der Sterne
+            cleaned_title = workout_title_match.group(1).strip()
             current_workout = cleaned_title
             continue
 
@@ -227,6 +236,10 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
     history_data = load_workout_history(user_profile.get('uuid'))
     history_summary, _ = analyze_workout_history(history_data)
 
+    # NEU: Lade die gefilterte Übungsliste und formatiere sie für die KI
+    filtered_exercises = load_filtered_exercises(user_profile)
+    available_exercises_text = format_exercises_for_milo(filtered_exercises)
+
     prompt_template = get_ai_prompt_template()
     
     if plan_request_params:
@@ -250,9 +263,11 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
         split_type = "passend zum Profil"
         focus = user_profile.get('primary_goal', 'Muskelaufbau')
 
+    # NEU: Der neue Platzhalter {available_exercises} wird gefüllt
     system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis=history_summary, 
+        available_exercises=available_exercises_text, # HIER WIRD DIE ÜBUNGSLISTE EINGEFÜGT
         additional_info=additional_info, 
         training_days=training_days,
         split_type=split_type, 
@@ -274,12 +289,15 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
         return "Es tut mir leid, es gab ein Problem bei der Verbindung zur KI."
 
 def get_initial_plan_response(user_profile: dict):
-    """Generates the very first plan proposal based on the questionnaire data."""
+    # ... (diese Funktion wird ebenfalls angepasst, um die Übungsliste zu nutzen) ...
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
     
     user_profile = enrich_user_profile(user_profile.copy())
     st.session_state.user_profile = user_profile
+
+    filtered_exercises = load_filtered_exercises(user_profile)
+    available_exercises_text = format_exercises_for_milo(filtered_exercises)
 
     prompt_template = get_ai_prompt_template()
     
@@ -288,6 +306,7 @@ def get_initial_plan_response(user_profile: dict):
     system_prompt_content = prompt_template.format(
         profile=user_profile,
         history_analysis="Keine Trainingshistorie vorhanden, da der Nutzer neu ist.",
+        available_exercises=available_exercises_text,
         additional_info=initial_prompt_text,
         training_days=user_profile.get("training_days_per_week", 3),
         split_type="passend zum Profil",
@@ -309,7 +328,7 @@ def get_initial_plan_response(user_profile: dict):
         return "Es tut mir leid, es gab ein Problem bei der Verbindung zur KI."
 
 def get_workout_feedback(analysis_text: str):
-    """Generates a motivational feedback message based on the workout analysis."""
+    # ... (diese Funktion bleibt unverändert) ...
     if not ai_client:
         return "Super gemacht! Dein Workout wurde gespeichert."
 

@@ -118,7 +118,7 @@ def delete_workout(workout_ids: list) -> bool:
         st.error(f"Fehler beim Löschen des Workouts: {e}")
         return False
 
-# --- NEW WORKOUT HISTORY FUNCTION ---
+# --- NEW WORKOUT HISTORY FUNCTION (WITH BUGFIX) ---
 
 def archive_workout_and_analyze(user_uuid: str, workout_name: str):
     """
@@ -136,21 +136,22 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
 
         if not completed_sets_response.data:
             st.warning("Keine abgeschlossenen Sätze zum Archivieren in diesem Workout gefunden.")
-            return None, "Keine abgeschlossenen Sätze gefunden."
+            return False, "Keine abgeschlossenen Sätze gefunden."
 
         sets_to_archive = completed_sets_response.data
+        
+        # BUGFIX: Get the IDs for resetting *before* they are potentially modified.
+        set_ids_to_reset = [s['id'] for s in sets_to_archive]
         
         # 2. Analyze for PRs before archiving
         pr_summary = []
         df_archived = pd.DataFrame(sets_to_archive)
         
         for exercise in df_archived['exercise'].unique():
-            # Get the best set (max weight) for the current exercise
             best_set = df_archived[df_archived['exercise'] == exercise].sort_values('weight', ascending=False).iloc[0]
             current_weight = best_set['weight']
             current_reps = best_set['reps']
 
-            # Get historical data for this exercise
             history_response = supabase_auth_client.table("workouts_history") \
                 .select("weight, reps") \
                 .eq("uuid", user_uuid) \
@@ -169,14 +170,14 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
         analysis_string = " ".join(pr_summary) if pr_summary else "Starke Leistung, alle Sätze abgeschlossen!"
 
         # 3. Copy sets to history table
-        # We need to remove the 'id' column as it's auto-generated in the history table
-        for s in sets_to_archive:
-            del s['id']
+        # BUGFIX: Create a copy of the list to avoid modifying the original data.
+        sets_for_history = [s.copy() for s in sets_to_archive]
+        for s in sets_for_history:
+            del s['id'] # Remove the original ID for the history table
         
-        supabase_auth_client.table("workouts_history").insert(sets_to_archive).execute()
+        supabase_auth_client.table("workouts_history").insert(sets_for_history).execute()
 
-        # 4. Reset the sets in the original workouts table
-        set_ids_to_reset = [s['id'] for s in completed_sets_response.data]
+        # 4. Reset the sets in the original workouts table using the saved IDs
         update_payload = {"completed": False, "messagetocoach": "", "rirdone": 0}
         
         supabase_auth_client.table("workouts") \
@@ -188,4 +189,4 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
 
     except Exception as e:
         st.error(f"Fehler beim Archivieren des Workouts: {e}")
-        return None, f"Fehler: {e}"
+        return False, f"Fehler: {e}"

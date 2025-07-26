@@ -59,7 +59,6 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        # CORRECTED: More robust regex to catch workout titles like **Workout:** or *Tag 1*
         workout_title_match = re.match(r'^\s*\*+\s*(.*?)\s*\*+[:]?$', line)
         if workout_title_match:
             current_workout = workout_title_match.group(1).strip()
@@ -182,3 +181,28 @@ def get_initial_plan_response(user_profile: dict):
     except Exception as e:
         st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
         return "Es tut mir leid, es gab ein Problem bei der Verbindung zur KI."
+
+# --- NEW FUNCTION TO FIX THE IMPORT ERROR ---
+def get_workout_feedback(analysis_text: str):
+    """Generates a motivational feedback message based on the workout analysis."""
+    if not ai_client:
+        return "Super gemacht! Dein Workout wurde gespeichert."
+
+    feedback_prompt = f"""
+Ein Nutzer hat gerade sein Workout beendet. Hier ist eine Analyse seiner Leistung:
+---
+{analysis_text}
+---
+Deine Aufgabe: Gib ihm ein kurzes (2-3 Sätze), positives und motivierendes Feedback. Sprich ihn direkt an. Wenn neue Rekorde aufgestellt wurden, feiere das besonders. Wenn keine Rekorde dabei waren, lobe einfach den Fleiß.
+"""
+
+    try:
+        response = ai_client.chat.completions.create(
+            model="gpt-3.5-turbo", # Using a faster model for quick feedback
+            messages=[{"role": "user", "content": feedback_prompt}],
+            temperature=0.8
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        st.error(f"Fehler bei der Erstellung des Feedbacks: {e}")
+        return "Starke Leistung! Dein Workout wurde erfolgreich gespeichert."

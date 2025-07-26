@@ -7,7 +7,7 @@ from openai import OpenAI
 import datetime
 import pandas as pd
 from supabase_utils import load_workout_history
-from dateutil.relativedelta import relativedelta # Zum Berechnen des Alters
+from dateutil.relativedelta import relativedelta
 
 # --- OpenAI Client Initialization ---
 @st.cache_resource
@@ -32,7 +32,6 @@ def enrich_user_profile(user_profile: dict) -> dict:
     """
     Calculates Age, BMI, and Lean Body Mass and adds them to the profile.
     """
-    # Alter berechnen
     try:
         birthday = datetime.datetime.fromisoformat(user_profile.get("birthday", "")).date()
         today = datetime.date.today()
@@ -41,7 +40,6 @@ def enrich_user_profile(user_profile: dict) -> dict:
     except (ValueError, TypeError):
         user_profile['age'] = "N/A"
 
-    # BMI berechnen
     try:
         height_m = float(user_profile.get("height_cm", 0)) / 100
         weight_kg = float(user_profile.get("weight_kg", 0))
@@ -53,7 +51,6 @@ def enrich_user_profile(user_profile: dict) -> dict:
     except (ValueError, TypeError):
         user_profile['bmi'] = "N/A"
 
-    # Fettfreie Masse berechnen
     try:
         bodyfat_perc = float(user_profile.get("bodyfat_percentage", 0))
         weight_kg = float(user_profile.get("weight_kg", 0))
@@ -220,27 +217,38 @@ def get_chat_response(messages: list, user_profile: dict, plan_request_params: d
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
-    # NEU: Profildaten anreichern
     user_profile = enrich_user_profile(user_profile.copy())
-    st.session_state.user_profile = user_profile # Aktualisiert das Profil auch in der UI
+    st.session_state.user_profile = user_profile
 
     history_data = load_workout_history(user_profile.get('uuid'))
     history_summary, _ = analyze_workout_history(history_data)
 
     prompt_template = get_ai_prompt_template()
     
-    # NEU: Logik für die Steuerung per Button
+    # NEU: Kombinierte Logik für die Anforderung
     if plan_request_params:
-        # Wenn der Button geklickt wurde, ist der Wunsch klar
-        additional_info = "Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an. Bitte erstelle ihn."
+        # Fall 1: Button wurde geklickt
+        comment = plan_request_params.get('comment', '')
+        additional_info = f"Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an. Zusätzlicher Wunsch: '{comment}'" if comment else "Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an."
         training_days = plan_request_params.get('days')
         split_type = plan_request_params.get('split')
         focus = plan_request_params.get('focus')
     else:
-        # Normaler Chat: die Wünsche kommen aus dem Chatverlauf
-        additional_info = "Hier ist der bisherige Gesprächsverlauf:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+        # Fall 2: Normaler Chat (iterative Verbesserung)
+        # Hier fügen wir die spezielle Anweisung für iterative Updates hinzu
+        iterative_instruction = (
+            "WICHTIGE ANWEISUNG FÜR DIESE ANTWORT:\n"
+            "1. Antworte zuerst in normaler Sprache auf die letzte Nachricht des Nutzers.\n"
+            "2. WENN du den Trainingsplan als Reaktion auf die Nutzeranfrage geändert hast, füge NACH deiner normalen Antwort den kompletten, aktualisierten Plan in einem `<PLAN_UPDATE>` Tag hinzu. Beispiel: `<PLAN_UPDATE>...neuer Plan...</PLAN_UPDATE>`\n"
+            "3. Wenn du nur eine Frage beantwortest und den Plan NICHT änderst, füge den `<PLAN_UPDATE>` Tag NICHT hinzu.\n\n"
+            "Hier ist der bisherige Gesprächsverlauf:\n"
+        )
+        chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+        additional_info = iterative_instruction + chat_history_text
+        
+        # Parameter aus dem Profil als Standard nehmen
         training_days = user_profile.get('training_days_per_week', 3)
-        split_type = user_profile.get('split_type', 'Ganzkörper')
+        split_type = "passend zum Profil" # KI soll den besten Split wählen
         focus = user_profile.get('primary_goal', 'Muskelaufbau')
 
     system_prompt_content = prompt_template.format(

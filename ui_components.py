@@ -91,7 +91,6 @@ def _render_questionnaire_step1():
         forename = st.text_input("Vorname *", value=q_data.get("forename", ""))
         surename = st.text_input("Nachname *", value=q_data.get("surename", ""))
         
-        # NEU: Abfrage des Geschlechts
         gender = st.selectbox(
             "Geschlecht *", 
             ["Weiblich", "Männlich", "Divers"], 
@@ -113,13 +112,11 @@ def _render_questionnaire_step1():
             if not all([forename, surename, height, weight, gender]):
                 st.error("Bitte fülle alle Pflichtfelder (*) aus.")
                 return
-            # NEU: Geschlecht wird gespeichert
             q_data.update({"forename": forename, "surename": surename, "gender": gender, "birthday": birthday, "height_cm": height, "weight_kg": weight, "bodyfat_percentage": bodyfat})
             st.session_state.questionnaire_step = 2
             st.rerun()
 
 def _render_questionnaire_step2():
-    # Diese Funktion bleibt unverändert
     st.subheader("Schritt 2: Deine Ziele & dein Alltag")
     with st.form("step2_form"):
         q_data = st.session_state.questionnaire_data
@@ -176,7 +173,6 @@ def _render_questionnaire_step3():
         if submitted:
             q_data.update({"medical_topics": medical_topics, "medical_topics_details": st.session_state.medical_topics_details, "pain_and_injury_notes": st.session_state.pain_and_injury_notes, "other_health_notes": st.session_state.other_health_notes, "sleep_quality_rating": sleep_quality_rating, "stress_level_rating": stress_level_rating, "motivation_level": motivation_level})
             with st.spinner("Speichere deine Antworten..."):
-                # NEU: Geschlecht wird in die Datenbank geschrieben
                 db_payload = {
                     "auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()), 
                     "forename": q_data.get("forename"), "surename": q_data.get("surename"),
@@ -236,25 +232,31 @@ def render_chat_tab(user_profile):
     if "latest_plan_text" not in st.session_state:
         st.session_state.latest_plan_text = ""
 
-    # NEU: Steuerungselemente für die Planerstellung
+    # NEU: Steuerungselemente mit Kommentarfeld
     with st.expander("Neuen Plan anfordern oder anpassen"):
         plan_params = {}
-        plan_params['days'] = st.slider("Trainingstage pro Woche", 1, 7, user_profile.get("training_days_per_week", 3))
+        plan_params['days'] = st.slider("Trainingstage pro Woche", 1, 7, user_profile.get("training_days_per_week", 3), key="plan_days")
         plan_params['split'] = st.selectbox(
             "Split-Typ", 
             ["Ganzkörper", "Oberkörper/Unterkörper", "Push/Pull/Beine", "Individuell"],
-            index=["Ganzkörper", "Oberkörper/Unterkörper", "Push/Pull/Beine", "Individuell"].index(user_profile.get("split_type", "Ganzkörper"))
+            index=["Ganzkörper", "Oberkörper/Unterkörper", "Push/Pull/Beine", "Individuell"].index(user_profile.get("split_type", "Ganzkörper")),
+            key="plan_split"
         )
         plan_params['focus'] = st.selectbox(
             "Fokus",
             ["Muskelaufbau", "Kraftsteigerung", "Fettreduktion", "Allgemeine Fitness"],
-            index=["Muskelaufbau", "Kraftsteigerung", "Fettreduktion", "Allgemeine Fitness"].index(user_profile.get("primary_goal", "Muskelaufbau"))
+            index=["Muskelaufbau", "Kraftsteigerung", "Fettreduktion", "Allgemeine Fitness"].index(user_profile.get("primary_goal", "Muskelaufbau")),
+            key="plan_focus"
+        )
+        # NEU: Das Kommentarfeld
+        plan_params['comment'] = st.text_area(
+            "Zusätzliche Wünsche für diesen Plan (optional)",
+            placeholder="z.B. Ich möchte Kniebeugen durch Beinpresse ersetzen.",
+            key="plan_comment"
         )
         
-        # NEU: Der explizite Button zum Anfordern eines Plans
         if st.button("Neuen Plan mit diesen Einstellungen anfordern", type="primary", use_container_width=True):
             with st.spinner("Milo erstellt deinen neuen Plan basierend auf den Einstellungen..."):
-                # Wir übergeben die neuen Parameter direkt an die KI-Funktion
                 response_text = get_chat_response(
                     st.session_state.messages, 
                     user_profile, 
@@ -262,7 +264,6 @@ def render_chat_tab(user_profile):
                 )
                 st.session_state.latest_plan_text = response_text
                 
-                # Begrüßungstext für den Chat extrahieren
                 if "TEIL 2 - DER TRAININGSPLAN" in response_text:
                     conversational_part = response_text.split("TEIL 2 - DER TRAININGSPLAN")[0]
                 else:
@@ -271,7 +272,7 @@ def render_chat_tab(user_profile):
                 st.session_state.messages.append({"role": "assistant", "content": conversational_part})
                 st.rerun()
 
-    # Initial Plan Generation (läuft nur einmal nach dem Fragebogen)
+    # Initial Plan Generation
     if st.session_state.get("run_initial_plan_generation", False):
         st.session_state.run_initial_plan_generation = False
         with st.spinner("Milo analysiert dein Profil und erstellt einen ersten Plan-Vorschlag..."):
@@ -313,7 +314,7 @@ def render_chat_tab(user_profile):
         with st.chat_message(message["role"], avatar=avatar_icon):
             st.markdown(message["content"])
 
-    # Handle user input for general chat
+    # Handle user input for general chat AND iterative plan updates
     if prompt := st.chat_input("Stelle Fragen oder gib Änderungswünsche ein"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="🧑"):
@@ -321,19 +322,16 @@ def render_chat_tab(user_profile):
 
         with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
-                # Hier wird kein plan_request_params übergeben -> normaler Chat
                 full_response = get_chat_response(st.session_state.messages, user_profile)
                 
+                # NEU: Diese Logik funktioniert jetzt wieder zuverlässig
                 plan_update_match = re.search(r'<PLAN_UPDATE>(.*)</PLAN_UPDATE>', full_response, re.DOTALL)
                 
                 if plan_update_match:
                     new_plan_text = plan_update_match.group(1).strip()
-                    st.session_state.latest_plan_text = new_plan_text
+                    # Der Canvas wird mit dem neuen Plan aus dem Chat aktualisiert
+                    st.session_state.latest_plan_text = new_plan_text 
                     conversational_part = re.sub(r'<PLAN_UPDATE>.*</PLAN_UPDATE>', '', full_response, flags=re.DOTALL).strip()
-                elif "TEIL 2 - DER TRAININGSPLAN" in full_response:
-                    new_plan_text = full_response
-                    st.session_state.latest_plan_text = new_plan_text
-                    conversational_part = full_response.split("TEIL 2 - DER TRAININGSPLAN")[0].strip()
                 else:
                     conversational_part = full_response
 
@@ -530,7 +528,6 @@ def display_main_app_page(user_profile):
         st.write(f"**Name:** {user_profile.get('forename', '')} {user_profile.get('surename', '')}")
         st.write(f"**E-Mail:** {user_profile.get('email', '')}")
         
-        # NEU: Zeigt die angereicherten Daten im Profil an
         st.write(f"**Alter:** {user_profile.get('age', 'N/A')}")
         st.write(f"**Geschlecht:** {user_profile.get('gender', 'N/A')}")
         st.write(f"**BMI:** {user_profile.get('bmi', 'N/A')}")

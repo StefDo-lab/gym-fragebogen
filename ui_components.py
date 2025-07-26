@@ -255,16 +255,28 @@ def render_chat_tab(user_profile):
             with st.spinner("Milo denkt nach..."):
                 full_response = get_chat_response(st.session_state.messages, user_profile)
                 
+                # CORRECTED LOGIC: More robust plan detection
                 plan_update_match = re.search(r'<PLAN_UPDATE>(.*)</PLAN_UPDATE>', full_response, re.DOTALL)
-                
+                new_plan_text = ""
+                conversational_part = ""
+
                 if plan_update_match:
                     new_plan_text = plan_update_match.group(1).strip()
-                    st.session_state.latest_plan_text = new_plan_text
                     conversational_part = re.sub(r'<PLAN_UPDATE>.*</PLAN_UPDATE>', '', full_response, flags=re.DOTALL).strip()
+                elif "TEIL 2 - DER TRAININGSPLAN" in full_response:
+                    # Fallback if AI forgets the tag
+                    new_plan_text = full_response
+                    conversational_part = full_response.split("TEIL 2 - DER TRAININGSPLAN")[0].strip()
                 else:
+                    # No plan found, treat as pure conversation
                     conversational_part = full_response
 
-                st.session_state.messages.append({"role": "assistant", "content": conversational_part})
+                if new_plan_text:
+                    st.session_state.latest_plan_text = new_plan_text
+                
+                if conversational_part:
+                    st.session_state.messages.append({"role": "assistant", "content": conversational_part})
+                
                 st.rerun()
 
 def display_training_tab(user_profile: dict):

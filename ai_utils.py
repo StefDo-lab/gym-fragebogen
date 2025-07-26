@@ -25,7 +25,7 @@ def init_openai_client():
 
 ai_client = init_openai_client()
 
-# --- NEUE FUNKTION ZUR ANALYSE DER HISTORIE ---
+# --- NEUE FUNKTION ZUR ANALYSE DER HISTORIE (AKTUALISIERT) ---
 def analyze_workout_history(history_data: list):
     """Analysiert die Trainingshistorie und bereitet eine Textzusammenfassung und ein DataFrame auf."""
     if not history_data:
@@ -34,9 +34,12 @@ def analyze_workout_history(history_data: list):
     df = pd.DataFrame(history_data)
     
     # Datenbereinigung
-    for col in ["weight", "reps", "rirdone"]:
+    for col in ["weight", "reps", "rirdone", "messagetocoach"]:
         if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            if col in ["weight", "reps", "rirdone"]:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+            if col == "messagetocoach":
+                df[col] = df[col].fillna('') # Leere Nachrichten als String
     
     # Konvertiere 'time' aus der DB zu einem reinen Datum für die Gruppierung
     df['date'] = pd.to_datetime(df['time']).dt.date
@@ -49,7 +52,6 @@ def analyze_workout_history(history_data: list):
         first_workout = df['date'].min()
         last_workout = df['date'].max()
         days_training = (last_workout - first_workout).days + 1
-        # Verhindert eine Division durch Null, wenn nur ein Trainingstag existiert
         frequency = total_workouts / max(days_training / 7, 1) 
         
         analysis_parts.append(f"TRAININGSÜBERSICHT:")
@@ -69,6 +71,24 @@ def analyze_workout_history(history_data: list):
         max_weight = ex_data['weight'].max()
         
         analysis_parts.append(f"- {exercise}: Aktuell bei {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
+
+    # 3. Feedback vom Athleten (NEU & VERBESSERT)
+    messages_df = df[df['messagetocoach'].notna() & (df['messagetocoach'] != '')].copy()
+    
+    if not messages_df.empty:
+        analysis_parts.append("\nFEEDBACK VOM ATHLETEN:")
+        # Sortiere Nachrichten nach Datum, um die neuesten zuerst zu haben
+        messages_df = messages_df.sort_values(by='date', ascending=False)
+        
+        # Verhindere doppelte Nachrichten pro Übung und Tag
+        unique_messages = messages_df.drop_duplicates(subset=['date', 'exercise', 'messagetocoach'])
+        
+        for _, row in unique_messages.iterrows():
+            date_str = row['date'].strftime('%d.%m.%Y')
+            exercise_name = row['exercise']
+            message = row['messagetocoach']
+            # Fügt die Nachricht mit Übungs-Kontext hinzu
+            analysis_parts.append(f"- {date_str} ({exercise_name}): \"{message}\"")
     
     summary = "\n".join(analysis_parts)
     return summary, df
@@ -162,10 +182,10 @@ def get_chat_response(messages: list, user_profile: dict):
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
-    # --- NEU: Lade und analysiere die Trainingshistorie ---
+    # --- Lade und analysiere die Trainingshistorie ---
     history_data = load_workout_history(user_profile.get('uuid'))
     history_summary, _ = analyze_workout_history(history_data)
-    # --- ENDE NEU ---
+    # --- ENDE ---
 
     prompt_template = get_ai_prompt_template()
     

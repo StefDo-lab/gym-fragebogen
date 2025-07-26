@@ -5,8 +5,9 @@ import streamlit as st
 import re
 from openai import OpenAI
 import datetime
-import pandas as pd # NEUER IMPORT
-from supabase_utils import load_workout_history # NEUER IMPORT
+import pandas as pd
+from supabase_utils import load_workout_history
+from dateutil.relativedelta import relativedelta # Zum Berechnen des Alters
 
 # --- OpenAI Client Initialization ---
 @st.cache_resource
@@ -25,7 +26,48 @@ def init_openai_client():
 
 ai_client = init_openai_client()
 
-# --- NEUE FUNKTION ZUR ANALYSE DER HISTORIE (AKTUALISIERT) ---
+# --- Data Enrichment and Analysis ---
+
+def enrich_user_profile(user_profile: dict) -> dict:
+    """
+    Calculates Age, BMI, and Lean Body Mass and adds them to the profile.
+    """
+    # Alter berechnen
+    try:
+        birthday = datetime.datetime.fromisoformat(user_profile.get("birthday", "")).date()
+        today = datetime.date.today()
+        age = relativedelta(today, birthday).years
+        user_profile['age'] = age
+    except (ValueError, TypeError):
+        user_profile['age'] = "N/A"
+
+    # BMI berechnen
+    try:
+        height_m = float(user_profile.get("height_cm", 0)) / 100
+        weight_kg = float(user_profile.get("weight_kg", 0))
+        if height_m > 0 and weight_kg > 0:
+            bmi = round(weight_kg / (height_m ** 2), 1)
+            user_profile['bmi'] = bmi
+        else:
+            user_profile['bmi'] = "N/A"
+    except (ValueError, TypeError):
+        user_profile['bmi'] = "N/A"
+
+    # Fettfreie Masse berechnen
+    try:
+        bodyfat_perc = float(user_profile.get("bodyfat_percentage", 0))
+        weight_kg = float(user_profile.get("weight_kg", 0))
+        if bodyfat_perc > 0 and weight_kg > 0:
+            fat_mass = weight_kg * (bodyfat_perc / 100)
+            lean_body_mass = round(weight_kg - fat_mass, 1)
+            user_profile['lean_body_mass_kg'] = lean_body_mass
+        else:
+            user_profile['lean_body_mass_kg'] = "N/A"
+    except (ValueError, TypeError):
+        user_profile['lean_body_mass_kg'] = "N/A"
+        
+    return user_profile
+
 def analyze_workout_history(history_data: list):
     """Analysiert die Trainingshistorie und bereitet eine Textzusammenfassung und ein DataFrame auf."""
     if not history_data:
@@ -33,20 +75,17 @@ def analyze_workout_history(history_data: list):
     
     df = pd.DataFrame(history_data)
     
-    # Datenbereinigung
     for col in ["weight", "reps", "rirdone", "messagetocoach"]:
         if col in df.columns:
             if col in ["weight", "reps", "rirdone"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
             if col == "messagetocoach":
-                df[col] = df[col].fillna('') # Leere Nachrichten als String
+                df[col] = df[col].fillna('')
     
-    # Konvertiere 'time' aus der DB zu einem reinen Datum für die Gruppierung
     df['date'] = pd.to_datetime(df['time']).dt.date
     
     analysis_parts = []
     
-    # 1. Allgemeine Statistiken
     total_workouts = df['date'].nunique()
     if total_workouts > 0:
         first_workout = df['date'].min()
@@ -59,7 +98,6 @@ def analyze_workout_history(history_data: list):
         analysis_parts.append(f"- Zeitraum: {first_workout.strftime('%d.%m.%Y')} bis {last_workout.strftime('%d.%m.%Y')}")
         analysis_parts.append(f"- Durchschnittliche Frequenz: {frequency:.1f} Trainings/Woche\n")
     
-    # 2. Übungsanalyse
     analysis_parts.append("ÜBUNGSFORTSCHRITTE:")
     exercises = df['exercise'].unique()
     
@@ -72,22 +110,17 @@ def analyze_workout_history(history_data: list):
         
         analysis_parts.append(f"- {exercise}: Aktuell bei {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
 
-    # 3. Feedback vom Athleten (NEU & VERBESSERT)
     messages_df = df[df['messagetocoach'].notna() & (df['messagetocoach'] != '')].copy()
     
     if not messages_df.empty:
         analysis_parts.append("\nFEEDBACK VOM ATHLETEN:")
-        # Sortiere Nachrichten nach Datum, um die neuesten zuerst zu haben
         messages_df = messages_df.sort_values(by='date', ascending=False)
-        
-        # Verhindere doppelte Nachrichten pro Übung und Tag
         unique_messages = messages_df.drop_duplicates(subset=['date', 'exercise', 'messagetocoach'])
         
         for _, row in unique_messages.iterrows():
             date_str = row['date'].strftime('%d.%m.%Y')
             exercise_name = row['exercise']
             message = row['messagetocoach']
-            # Fügt die Nachricht mit Übungs-Kontext hinzu
             analysis_parts.append(f"- {date_str} ({exercise_name}): \"{message}\"")
     
     summary = "\n".join(analysis_parts)
@@ -109,11 +142,11 @@ def get_ai_prompt_template():
 
 def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
     """
-    Parses the AI-generated plan text, expecting the TEIL 1 / TEIL 2 structure.
+    Parses the AI-generated plan text.
     """
     rows = []
     current_date = datetime.date.today().isoformat()
-    current_workout = "Trainingsplan"
+    current_workout = None 
     
     user_uuid = user_profile.get("uuid")
     user_name = f"{user_profile.get('forename', '')} {user_profile.get('surename', '')}".strip()
@@ -129,9 +162,14 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
         if not line:
             continue
         
-        workout_title_match = re.match(r'^\s*\*+\s*(.*?)\s*\*+[:]?$', line)
+        workout_title_match = re.match(r'^\s*\*+\s*(Workout [A-Z]|Tag \d+|Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag|Push|Pull|Legs|Oberkörper|Unterkörper|Ganzkörper)[^:\n]*\s*\*+[:]?$', line, re.IGNORECASE)
+        
         if workout_title_match:
-            current_workout = workout_title_match.group(1).strip()
+            cleaned_title = workout_title_match.group(0).replace('*', '').replace(':', '').strip()
+            current_workout = cleaned_title
+            continue
+
+        if current_workout is None:
             continue
 
         exercise_match = re.match(r'^\s*[-*]\s*(.+?):\s*(.*)', line)
@@ -177,38 +215,41 @@ def parse_ai_plan_to_rows(plan_text: str, user_profile: dict):
 
     return rows
 
-def get_chat_response(messages: list, user_profile: dict):
+def get_chat_response(messages: list, user_profile: dict, plan_request_params: dict = None):
     """Builds the prompt from the template and chat history, then gets a response."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
-    # --- Lade und analysiere die Trainingshistorie ---
+    # NEU: Profildaten anreichern
+    user_profile = enrich_user_profile(user_profile.copy())
+    st.session_state.user_profile = user_profile # Aktualisiert das Profil auch in der UI
+
     history_data = load_workout_history(user_profile.get('uuid'))
     history_summary, _ = analyze_workout_history(history_data)
-    # --- ENDE ---
 
     prompt_template = get_ai_prompt_template()
     
-    dynamic_instruction = """
-WICHTIGE ANWEISUNG FÜR DIESE ANTWORT:
-1. Antworte zuerst in normaler Sprache auf die letzte Nachricht des Nutzers.
-2. WENN du den Trainingsplan als Reaktion auf die Nutzeranfrage geändert hast, füge NACH deiner normalen Antwort den kompletten, aktualisierten Plan in einem <PLAN_UPDATE> Tag hinzu. Beispiel: <PLAN_UPDATE>...neuer Plan...</PLAN_UPDATE>
-3. Der Plan im Tag MUSS vollständig sein und wieder TEIL 1 und TEIL 2 enthalten.
-4. Wenn du nur eine Frage beantwortest (z.B. zur Ernährung) und den Plan NICHT änderst, füge den <PLAN_UPDATE> Tag NICHT hinzu.
+    # NEU: Logik für die Steuerung per Button
+    if plan_request_params:
+        # Wenn der Button geklickt wurde, ist der Wunsch klar
+        additional_info = "Der Nutzer fordert einen neuen Plan mit den unten angegebenen Parametern an. Bitte erstelle ihn."
+        training_days = plan_request_params.get('days')
+        split_type = plan_request_params.get('split')
+        focus = plan_request_params.get('focus')
+    else:
+        # Normaler Chat: die Wünsche kommen aus dem Chatverlauf
+        additional_info = "Hier ist der bisherige Gesprächsverlauf:\n" + "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
+        training_days = user_profile.get('training_days_per_week', 3)
+        split_type = user_profile.get('split_type', 'Ganzkörper')
+        focus = user_profile.get('primary_goal', 'Muskelaufbau')
 
-Hier ist der bisherige Gesprächsverlauf:
-"""
-    
-    chat_history_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
-    full_user_request = dynamic_instruction + chat_history_text
-    
     system_prompt_content = prompt_template.format(
         profile=user_profile,
-        history_analysis=history_summary, # HIER WIRD DIE ANALYSE EINGEFÜGT
-        additional_info=full_user_request, 
-        training_days=user_profile.get("training_days_per_week", 3),
-        split_type="passend zum Profil", 
-        focus=user_profile.get("primary_goal", "Muskelaufbau"),
+        history_analysis=history_summary, 
+        additional_info=additional_info, 
+        training_days=training_days,
+        split_type=split_type, 
+        focus=focus,
         weight_instruction="Basiere die Gewichte auf der Trainingshistorie oder schlage für Anfänger passende Startgewichte vor."
     )
 
@@ -229,6 +270,9 @@ def get_initial_plan_response(user_profile: dict):
     """Generates the very first plan proposal based on the questionnaire data."""
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
+    
+    user_profile = enrich_user_profile(user_profile.copy())
+    st.session_state.user_profile = user_profile
 
     prompt_template = get_ai_prompt_template()
     
@@ -272,7 +316,7 @@ Deine Aufgabe: Gib ihm ein kurzes (2-3 Sätze), positives und motivierendes Feed
 
     try:
         response = ai_client.chat.completions.create(
-            model="gpt-3.5-turbo", # Using a faster model for quick feedback
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": feedback_prompt}],
             temperature=0.8
         )

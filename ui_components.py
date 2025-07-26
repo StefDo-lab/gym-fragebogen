@@ -11,12 +11,12 @@ from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data,
     load_user_workouts, update_workout_set, add_set, delete_set,
     delete_exercise, add_exercise, delete_workout, archive_workout_and_analyze,
-    load_workout_history # NEUER IMPORT
+    load_workout_history
 )
 from ai_utils import (
     get_initial_plan_response, get_chat_response, 
     parse_ai_plan_to_rows, get_workout_feedback,
-    analyze_workout_history # NEUER IMPORT
+    analyze_workout_history
 )
 
 # --- General UI Components ---
@@ -81,7 +81,7 @@ def display_login_page():
                     st.error("Registrierung fehlgeschlagen. Ist die E-Mail schon vergeben?")
 
 
-# --- QUESTIONNAIRE (UNCHANGED) ---
+# --- QUESTIONNAIRE (UPDATED) ---
 
 def _render_questionnaire_step1():
     st.subheader("Schritt 1: Wer bist du?")
@@ -90,24 +90,36 @@ def _render_questionnaire_step1():
         st.write("##### Deine Kontaktdaten")
         forename = st.text_input("Vorname *", value=q_data.get("forename", ""))
         surename = st.text_input("Nachname *", value=q_data.get("surename", ""))
+        
+        # NEU: Abfrage des Geschlechts
+        gender = st.selectbox(
+            "Geschlecht *", 
+            ["Weiblich", "Männlich", "Divers"], 
+            index=["Weiblich", "Männlich", "Divers"].index(q_data.get("gender", "Weiblich"))
+        )
+
         today = datetime.date.today()
         default_bday = q_data.get("birthday", today.replace(year=today.year - 25))
         birthday = st.date_input("Geburtsdatum *", min_value=today.replace(year=today.year - 100), max_value=today.replace(year=today.year - 16), value=default_bday)
+        
         st.divider()
         st.write("##### Deine Körpermaße")
         height = st.number_input("Deine Körpergröße (in cm) *", min_value=120, max_value=250, value=q_data.get("height_cm", 175))
         weight = st.number_input("Dein aktuelles Körpergewicht (in kg) *", min_value=40.0, max_value=250.0, value=q_data.get("weight_kg", 75.0), step=0.5)
         bodyfat = st.number_input("Dein Körperfettanteil in % (optional, wenn bekannt)", min_value=3.0, max_value=50.0, value=q_data.get("bodyfat_percentage", 15.0), step=0.25, help="Wenn du diesen Wert nicht kennst, einfach so lassen.")
+        
         submitted = st.form_submit_button("Weiter zu Schritt 2", type="primary")
         if submitted:
-            if not forename or not surename or not height or not weight:
+            if not all([forename, surename, height, weight, gender]):
                 st.error("Bitte fülle alle Pflichtfelder (*) aus.")
                 return
-            q_data.update({"forename": forename, "surename": surename, "birthday": birthday, "height_cm": height, "weight_kg": weight, "bodyfat_percentage": bodyfat})
+            # NEU: Geschlecht wird gespeichert
+            q_data.update({"forename": forename, "surename": surename, "gender": gender, "birthday": birthday, "height_cm": height, "weight_kg": weight, "bodyfat_percentage": bodyfat})
             st.session_state.questionnaire_step = 2
             st.rerun()
 
 def _render_questionnaire_step2():
+    # Diese Funktion bleibt unverändert
     st.subheader("Schritt 2: Deine Ziele & dein Alltag")
     with st.form("step2_form"):
         q_data = st.session_state.questionnaire_data
@@ -164,7 +176,20 @@ def _render_questionnaire_step3():
         if submitted:
             q_data.update({"medical_topics": medical_topics, "medical_topics_details": st.session_state.medical_topics_details, "pain_and_injury_notes": st.session_state.pain_and_injury_notes, "other_health_notes": st.session_state.other_health_notes, "sleep_quality_rating": sleep_quality_rating, "stress_level_rating": stress_level_rating, "motivation_level": motivation_level})
             with st.spinner("Speichere deine Antworten..."):
-                db_payload = {"auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()), "forename": q_data.get("forename"), "surename": q_data.get("surename"), "email": st.session_state.user.email, "birthday": str(q_data.get("birthday")), "height_cm": q_data.get("height_cm"), "weight_kg": q_data.get("weight_kg"), "bodyfat_percentage": q_data.get("bodyfat_percentage"), "job_activity_level": q_data.get("job_activity_level"), "sleep_hours_avg": q_data.get("sleep_hours_avg"), "nutrition_style": q_data.get("nutrition_style"), "training_days_per_week": q_data.get("training_days_per_week"), "time_per_session_minutes": q_data.get("time_per_session_minutes"), "training_location": q_data.get("training_location"), "experience_level": q_data.get("experience_level"), "primary_goal": q_data.get("primary_goal"), "use_rir": q_data.get("use_rir"), "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),}
+                # NEU: Geschlecht wird in die Datenbank geschrieben
+                db_payload = {
+                    "auth_user_id": st.session_state.user.id, "uuid": str(uuid.uuid4()), 
+                    "forename": q_data.get("forename"), "surename": q_data.get("surename"),
+                    "email": st.session_state.user.email, "birthday": str(q_data.get("birthday")),
+                    "gender": q_data.get("gender"), "height_cm": q_data.get("height_cm"), 
+                    "weight_kg": q_data.get("weight_kg"), "bodyfat_percentage": q_data.get("bodyfat_percentage"),
+                    "job_activity_level": q_data.get("job_activity_level"), "sleep_hours_avg": q_data.get("sleep_hours_avg"),
+                    "nutrition_style": q_data.get("nutrition_style"), "training_days_per_week": q_data.get("training_days_per_week"),
+                    "time_per_session_minutes": q_data.get("time_per_session_minutes"), "training_location": q_data.get("training_location"),
+                    "experience_level": q_data.get("experience_level"), "primary_goal": q_data.get("primary_goal"),
+                    "use_rir": q_data.get("use_rir"), 
+                    "has_restrictions": len(q_data.get("medical_topics", [])) > 0 or bool(q_data.get("pain_and_injury_notes", "").strip()),
+                }
                 context_payload = {"secondary_goals": q_data.get("secondary_goals"), "specific_goal_text": q_data.get("specific_goal_text"), "liked_equipment": q_data.get("liked_equipment"), "disliked_exercises": q_data.get("disliked_exercises"), "sleep_quality_rating": q_data.get("sleep_quality_rating"), "stress_level_rating": q_data.get("stress_level_rating"), "motivation_level": q_data.get("motivation_level"), "medical_topics_details": q_data.get("medical_topics_details"), "pain_and_injury_notes": q_data.get("pain_and_injury_notes"), "other_health_notes": q_data.get("other_health_notes"),}
                 db_payload["context_and_preferences"] = context_payload
                 response = insert_questionnaire_data(db_payload)
@@ -199,10 +224,10 @@ def display_questionnaire_page():
         _render_questionnaire_step3()
 
 
-# --- Main App Display ---
+# --- Main App Display (UPDATED) ---
 
 def render_chat_tab(user_profile):
-    """Renders the main chat interface, including the plan 'canvas'."""
+    """Renders the main chat interface, including the plan 'canvas' and new controls."""
     st.header("Planung mit Milo")
     logo_url = "https://github.com/StefDo-lab/gym-fragebogen/blob/feature/coach-milo-makeover/logo-dark.png?raw=true"
 
@@ -211,7 +236,42 @@ def render_chat_tab(user_profile):
     if "latest_plan_text" not in st.session_state:
         st.session_state.latest_plan_text = ""
 
-    # Initial Plan Generation
+    # NEU: Steuerungselemente für die Planerstellung
+    with st.expander("Neuen Plan anfordern oder anpassen"):
+        plan_params = {}
+        plan_params['days'] = st.slider("Trainingstage pro Woche", 1, 7, user_profile.get("training_days_per_week", 3))
+        plan_params['split'] = st.selectbox(
+            "Split-Typ", 
+            ["Ganzkörper", "Oberkörper/Unterkörper", "Push/Pull/Beine", "Individuell"],
+            index=["Ganzkörper", "Oberkörper/Unterkörper", "Push/Pull/Beine", "Individuell"].index(user_profile.get("split_type", "Ganzkörper"))
+        )
+        plan_params['focus'] = st.selectbox(
+            "Fokus",
+            ["Muskelaufbau", "Kraftsteigerung", "Fettreduktion", "Allgemeine Fitness"],
+            index=["Muskelaufbau", "Kraftsteigerung", "Fettreduktion", "Allgemeine Fitness"].index(user_profile.get("primary_goal", "Muskelaufbau"))
+        )
+        
+        # NEU: Der explizite Button zum Anfordern eines Plans
+        if st.button("Neuen Plan mit diesen Einstellungen anfordern", type="primary", use_container_width=True):
+            with st.spinner("Milo erstellt deinen neuen Plan basierend auf den Einstellungen..."):
+                # Wir übergeben die neuen Parameter direkt an die KI-Funktion
+                response_text = get_chat_response(
+                    st.session_state.messages, 
+                    user_profile, 
+                    plan_request_params=plan_params
+                )
+                st.session_state.latest_plan_text = response_text
+                
+                # Begrüßungstext für den Chat extrahieren
+                if "TEIL 2 - DER TRAININGSPLAN" in response_text:
+                    conversational_part = response_text.split("TEIL 2 - DER TRAININGSPLAN")[0]
+                else:
+                    conversational_part = response_text
+                
+                st.session_state.messages.append({"role": "assistant", "content": conversational_part})
+                st.rerun()
+
+    # Initial Plan Generation (läuft nur einmal nach dem Fragebogen)
     if st.session_state.get("run_initial_plan_generation", False):
         st.session_state.run_initial_plan_generation = False
         with st.spinner("Milo analysiert dein Profil und erstellt einen ersten Plan-Vorschlag..."):
@@ -228,7 +288,7 @@ def render_chat_tab(user_profile):
     if st.session_state.latest_plan_text:
         with st.expander("Dein aktueller Plan-Vorschlag", expanded=True):
             st.markdown(st.session_state.latest_plan_text)
-            if st.button("Diesen Plan aktivieren", type="primary", use_container_width=True, key="activate_plan_expander"):
+            if st.button("Diesen Plan aktivieren", use_container_width=True, key="activate_plan_expander"):
                 with st.spinner("Plan wird aktiviert..."):
                     new_rows = parse_ai_plan_to_rows(st.session_state.latest_plan_text, user_profile)
                     if not new_rows:
@@ -253,7 +313,7 @@ def render_chat_tab(user_profile):
         with st.chat_message(message["role"], avatar=avatar_icon):
             st.markdown(message["content"])
 
-    # Handle user input
+    # Handle user input for general chat
     if prompt := st.chat_input("Stelle Fragen oder gib Änderungswünsche ein"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar="🧑"):
@@ -261,6 +321,7 @@ def render_chat_tab(user_profile):
 
         with st.chat_message("assistant", avatar=logo_url):
             with st.spinner("Milo denkt nach..."):
+                # Hier wird kein plan_request_params übergeben -> normaler Chat
                 full_response = get_chat_response(st.session_state.messages, user_profile)
                 
                 plan_update_match = re.search(r'<PLAN_UPDATE>(.*)</PLAN_UPDATE>', full_response, re.DOTALL)
@@ -308,9 +369,9 @@ def display_training_tab(user_profile: dict):
                     success, analysis = archive_workout_and_analyze(user_profile_uuid, workout_name)
                     if success:
                         feedback = get_workout_feedback(analysis)
-                        st.success(feedback) # Nachricht bleibt jetzt stehen
+                        st.success(feedback)
                         st.balloons()
-                        time.sleep(1) # Kurze Pause vor dem Rerun, damit die Ballons sichtbar sind
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error(analysis)
@@ -396,7 +457,6 @@ def display_training_tab(user_profile: dict):
                 dummy_exercise = [{'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': wo_name, 'exercise': "Neue Übung", 'set': 1, 'weight': 0, 'reps': 10, 'completed': False}]
                 if add_exercise(dummy_exercise): st.rerun()
 
-# --- NEUE FUNKTION FÜR DEN STATISTIK-TAB ---
 def display_statistics_tab(user_profile: dict):
     """Renders the statistics and history page."""
     st.header("Deine Fortschritte")
@@ -406,19 +466,16 @@ def display_statistics_tab(user_profile: dict):
         st.error("Profil-UUID nicht gefunden. Kann Statistiken nicht laden.")
         return
 
-    # Lade die Historie-Daten
     history_data = load_workout_history(user_uuid)
 
     if not history_data:
         st.info("Noch keine abgeschlossenen Workouts vorhanden. Schließe ein Training ab, um hier deine Statistiken zu sehen!")
         return
     
-    # Nutze die Analyse-Funktion aus ai_utils, um die Daten aufzubereiten
     analysis_text, df_history = analyze_workout_history(history_data)
 
     st.subheader("Leistungsentwicklung")
 
-    # Auswahl für die Graphen
     exercise_list = sorted(df_history['exercise'].unique())
     selected_exercise = st.selectbox("Wähle eine Übung zur Analyse:", exercise_list)
 
@@ -426,19 +483,16 @@ def display_statistics_tab(user_profile: dict):
         ex_df = df_history[df_history['exercise'] == selected_exercise].copy()
         ex_df['date'] = pd.to_datetime(ex_df['date'])
         
-        # Aggregiere Daten pro Tag, um saubere Graphen zu erhalten
         daily_max_weight = ex_df.groupby('date')['weight'].max()
         ex_df['volume'] = ex_df['weight'] * ex_df['reps']
         daily_volume = ex_df.groupby('date')['volume'].sum()
 
-        # Chart für die Gewichtsentwicklung
         st.markdown(f"**Gewichtsentwicklung für {selected_exercise}**")
         if not daily_max_weight.empty:
             st.line_chart(daily_max_weight)
         else:
             st.write("Keine Gewichtsdaten für diese Übung vorhanden.")
 
-        # Chart für die Volumenentwicklung
         st.markdown(f"**Volumenentwicklung für {selected_exercise} (Gewicht * Wdh.)**")
         if not daily_volume.empty:
             st.line_chart(daily_volume)
@@ -447,7 +501,6 @@ def display_statistics_tab(user_profile: dict):
 
     st.divider()
 
-    # Zeige die von der KI generierte Text-Analyse
     st.subheader("Milos Analyse deiner Trainingshistorie")
     st.text(analysis_text)
 
@@ -456,7 +509,6 @@ def display_main_app_page(user_profile):
     """Controls the main app layout with tabs."""
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
-    # TABS UM STATISTIKEN ERWEITERT
     tabs = ["🗓️ Training", "💬 Chat mit Milo", "📊 Statistiken", "👤 Profil"]
     
     if st.session_state.get("run_initial_plan_generation", False):
@@ -470,13 +522,21 @@ def display_main_app_page(user_profile):
     with tab2:
         render_chat_tab(user_profile)
 
-    with tab3: # NEUER TAB
+    with tab3:
         display_statistics_tab(user_profile)
         
-    with tab4: # Profil ist jetzt der 4. Tab
+    with tab4:
         st.header("Dein Profil")
         st.write(f"**Name:** {user_profile.get('forename', '')} {user_profile.get('surename', '')}")
         st.write(f"**E-Mail:** {user_profile.get('email', '')}")
+        
+        # NEU: Zeigt die angereicherten Daten im Profil an
+        st.write(f"**Alter:** {user_profile.get('age', 'N/A')}")
+        st.write(f"**Geschlecht:** {user_profile.get('gender', 'N/A')}")
+        st.write(f"**BMI:** {user_profile.get('bmi', 'N/A')}")
+        st.write(f"**Fettfreie Masse:** {user_profile.get('lean_body_mass_kg', 'N/A')} kg")
+
+        st.divider()
         st.write(f"**Hauptziel:** {user_profile.get('primary_goal')}")
         st.write(f"**Erfahrung:** {user_profile.get('experience_level')}")
         

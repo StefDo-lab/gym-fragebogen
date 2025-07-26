@@ -5,6 +5,8 @@ import streamlit as st
 import re
 from openai import OpenAI
 import datetime
+import pandas as pd # NEUER IMPORT
+from supabase_utils import load_workout_history # NEUER IMPORT
 
 # --- OpenAI Client Initialization ---
 @st.cache_resource
@@ -22,6 +24,54 @@ def init_openai_client():
         return None
 
 ai_client = init_openai_client()
+
+# --- NEUE FUNKTION ZUR ANALYSE DER HISTORIE ---
+def analyze_workout_history(history_data: list):
+    """Analysiert die Trainingshistorie und bereitet eine Textzusammenfassung und ein DataFrame auf."""
+    if not history_data:
+        return "Keine Trainingshistorie vorhanden.", pd.DataFrame()
+    
+    df = pd.DataFrame(history_data)
+    
+    # Datenbereinigung
+    for col in ["weight", "reps", "rirdone"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+    
+    # Konvertiere 'time' aus der DB zu einem reinen Datum für die Gruppierung
+    df['date'] = pd.to_datetime(df['time']).dt.date
+    
+    analysis_parts = []
+    
+    # 1. Allgemeine Statistiken
+    total_workouts = df['date'].nunique()
+    if total_workouts > 0:
+        first_workout = df['date'].min()
+        last_workout = df['date'].max()
+        days_training = (last_workout - first_workout).days + 1
+        # Verhindert eine Division durch Null, wenn nur ein Trainingstag existiert
+        frequency = total_workouts / max(days_training / 7, 1) 
+        
+        analysis_parts.append(f"TRAININGSÜBERSICHT:")
+        analysis_parts.append(f"- Trainingseinheiten gesamt: {total_workouts}")
+        analysis_parts.append(f"- Zeitraum: {first_workout.strftime('%d.%m.%Y')} bis {last_workout.strftime('%d.%m.%Y')}")
+        analysis_parts.append(f"- Durchschnittliche Frequenz: {frequency:.1f} Trainings/Woche\n")
+    
+    # 2. Übungsanalyse
+    analysis_parts.append("ÜBUNGSFORTSCHRITTE:")
+    exercises = df['exercise'].unique()
+    
+    for exercise in sorted(exercises):
+        ex_data = df[df['exercise'] == exercise].sort_values('date')
+        if ex_data.empty: continue
+
+        last_weight = ex_data.iloc[-1]['weight']
+        max_weight = ex_data['weight'].max()
+        
+        analysis_parts.append(f"- {exercise}: Aktuell bei {last_weight:.1f} kg (Max: {max_weight:.1f} kg)")
+    
+    summary = "\n".join(analysis_parts)
+    return summary, df
 
 # --- AI Prompt and Plan Parsing Functions ---
 
@@ -112,6 +162,11 @@ def get_chat_response(messages: list, user_profile: dict):
     if not ai_client:
         return "Entschuldigung, ich kann mich gerade nicht mit meiner KI verbinden."
 
+    # --- NEU: Lade und analysiere die Trainingshistorie ---
+    history_data = load_workout_history(user_profile.get('uuid'))
+    history_summary, _ = analyze_workout_history(history_data)
+    # --- ENDE NEU ---
+
     prompt_template = get_ai_prompt_template()
     
     dynamic_instruction = """
@@ -129,7 +184,7 @@ Hier ist der bisherige Gesprächsverlauf:
     
     system_prompt_content = prompt_template.format(
         profile=user_profile,
-        history_analysis="Die Trainingshistorie ist für den Nutzer im Chatverlauf sichtbar.",
+        history_analysis=history_summary, # HIER WIRD DIE ANALYSE EINGEFÜGT
         additional_info=full_user_request, 
         training_days=user_profile.get("training_days_per_week", 3),
         split_type="passend zum Profil", 
@@ -182,7 +237,6 @@ def get_initial_plan_response(user_profile: dict):
         st.error(f"Fehler bei der Kommunikation mit der KI: {e}")
         return "Es tut mir leid, es gab ein Problem bei der Verbindung zur KI."
 
-# --- NEW FUNCTION TO FIX THE IMPORT ERROR ---
 def get_workout_feedback(analysis_text: str):
     """Generates a motivational feedback message based on the workout analysis."""
     if not ai_client:

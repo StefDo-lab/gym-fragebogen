@@ -10,9 +10,14 @@ import re
 from supabase_utils import (
     supabase_auth_client, insert_questionnaire_data,
     load_user_workouts, update_workout_set, add_set, delete_set,
-    delete_exercise, add_exercise, delete_workout, archive_workout_and_analyze
+    delete_exercise, add_exercise, delete_workout, archive_workout_and_analyze,
+    load_workout_history # NEUER IMPORT
 )
-from ai_utils import get_initial_plan_response, get_chat_response, parse_ai_plan_to_rows, get_workout_feedback
+from ai_utils import (
+    get_initial_plan_response, get_chat_response, 
+    parse_ai_plan_to_rows, get_workout_feedback,
+    analyze_workout_history # NEUER IMPORT
+)
 
 # --- General UI Components ---
 def inject_mobile_styles():
@@ -297,17 +302,15 @@ def display_training_tab(user_profile: dict):
         with st.expander(f"**{workout_name}**", expanded=True):
             workout_group = df[df['workout'] == workout_name].copy()
             
-            # --- NEW: Logic for the "Finish Workout" button ---
             all_sets_completed = all(workout_group['completed'])
             if st.button("Workout abschließen & Feedback erhalten", key=f"finish_wo_{workout_name}", disabled=not all_sets_completed, use_container_width=True, type="primary"):
                 with st.spinner("Milo schaut sich deine Leistung an..."):
                     success, analysis = archive_workout_and_analyze(user_profile_uuid, workout_name)
                     if success:
                         feedback = get_workout_feedback(analysis)
-                        st.success(feedback)
+                        st.success(feedback) # Nachricht bleibt jetzt stehen
                         st.balloons()
-                        # Potentially add a "Share PR" button here
-                        time.sleep(3)
+                        time.sleep(1) # Kurze Pause vor dem Rerun, damit die Ballons sichtbar sind
                         st.rerun()
                     else:
                         st.error(analysis)
@@ -393,25 +396,84 @@ def display_training_tab(user_profile: dict):
                 dummy_exercise = [{'uuid': user_profile_uuid, 'date': datetime.date.today().isoformat(), 'name': user_name, 'workout': wo_name, 'exercise': "Neue Übung", 'set': 1, 'weight': 0, 'reps': 10, 'completed': False}]
                 if add_exercise(dummy_exercise): st.rerun()
 
+# --- NEUE FUNKTION FÜR DEN STATISTIK-TAB ---
+def display_statistics_tab(user_profile: dict):
+    """Renders the statistics and history page."""
+    st.header("Deine Fortschritte")
+    user_uuid = user_profile.get('uuid')
+
+    if not user_uuid:
+        st.error("Profil-UUID nicht gefunden. Kann Statistiken nicht laden.")
+        return
+
+    # Lade die Historie-Daten
+    history_data = load_workout_history(user_uuid)
+
+    if not history_data:
+        st.info("Noch keine abgeschlossenen Workouts vorhanden. Schließe ein Training ab, um hier deine Statistiken zu sehen!")
+        return
+    
+    # Nutze die Analyse-Funktion aus ai_utils, um die Daten aufzubereiten
+    analysis_text, df_history = analyze_workout_history(history_data)
+
+    st.subheader("Leistungsentwicklung")
+
+    # Auswahl für die Graphen
+    exercise_list = sorted(df_history['exercise'].unique())
+    selected_exercise = st.selectbox("Wähle eine Übung zur Analyse:", exercise_list)
+
+    if selected_exercise:
+        ex_df = df_history[df_history['exercise'] == selected_exercise].copy()
+        ex_df['date'] = pd.to_datetime(ex_df['date'])
+        
+        # Aggregiere Daten pro Tag, um saubere Graphen zu erhalten
+        daily_max_weight = ex_df.groupby('date')['weight'].max()
+        ex_df['volume'] = ex_df['weight'] * ex_df['reps']
+        daily_volume = ex_df.groupby('date')['volume'].sum()
+
+        # Chart für die Gewichtsentwicklung
+        st.markdown(f"**Gewichtsentwicklung für {selected_exercise}**")
+        if not daily_max_weight.empty:
+            st.line_chart(daily_max_weight)
+        else:
+            st.write("Keine Gewichtsdaten für diese Übung vorhanden.")
+
+        # Chart für die Volumenentwicklung
+        st.markdown(f"**Volumenentwicklung für {selected_exercise} (Gewicht * Wdh.)**")
+        if not daily_volume.empty:
+            st.line_chart(daily_volume)
+        else:
+            st.write("Keine Volumendaten für diese Übung vorhanden.")
+
+    st.divider()
+
+    # Zeige die von der KI generierte Text-Analyse
+    st.subheader("Milos Analyse deiner Trainingshistorie")
+    st.text(analysis_text)
+
 
 def display_main_app_page(user_profile):
     """Controls the main app layout with tabs."""
     st.title(f"Willkommen, {user_profile.get('forename', 'Athlet')}!")
     
-    tabs = ["🗓️ Training", "💬 Chat mit Milo", "👤 Profil"]
+    # TABS UM STATISTIKEN ERWEITERT
+    tabs = ["🗓️ Training", "💬 Chat mit Milo", "📊 Statistiken", "👤 Profil"]
     
     if st.session_state.get("run_initial_plan_generation", False):
         st.info("🤖 Milo erstellt deinen ersten Plan-Vorschlag im 'Chat mit Milo'-Tab. Bitte wechsle dorthin, um ihn zu sehen.")
 
-    tab1, tab2, tab3 = st.tabs(tabs)
+    tab1, tab2, tab3, tab4 = st.tabs(tabs)
     
     with tab1:
         display_training_tab(user_profile)
     
     with tab2:
         render_chat_tab(user_profile)
+
+    with tab3: # NEUER TAB
+        display_statistics_tab(user_profile)
         
-    with tab3:
+    with tab4: # Profil ist jetzt der 4. Tab
         st.header("Dein Profil")
         st.write(f"**Name:** {user_profile.get('forename', '')} {user_profile.get('surename', '')}")
         st.write(f"**E-Mail:** {user_profile.get('email', '')}")

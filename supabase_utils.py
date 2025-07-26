@@ -64,6 +64,20 @@ def load_user_workouts(user_profile_uuid: str) -> list:
         st.error(f"Fehler beim Laden der Workouts: {e}")
         return []
 
+# --- NEUE FUNKTION ZUM LADEN DER WORKOUT-HISTORIE ---
+def load_workout_history(user_uuid: str) -> list:
+    """Loads all workout history for a user from the 'workouts_history' table."""
+    try:
+        response = supabase_auth_client.table("workouts_history") \
+            .select("*") \
+            .eq("uuid", user_uuid) \
+            .order("time", desc=True) \
+            .execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Trainingshistorie: {e}")
+        return []
+
 def update_workout_set(set_id: int, updates: dict) -> bool:
     """Updates a single completed set in the database."""
     try:
@@ -118,15 +132,12 @@ def delete_workout(workout_ids: list) -> bool:
         st.error(f"Fehler beim Löschen des Workouts: {e}")
         return False
 
-# --- NEW WORKOUT HISTORY FUNCTION (WITH BUGFIX) ---
-
 def archive_workout_and_analyze(user_uuid: str, workout_name: str):
     """
     Archives all completed sets of a specific workout, resets them in the active plan,
     and analyzes for new personal records (PRs).
     """
     try:
-        # 1. Fetch completed sets for the specified workout
         completed_sets_response = supabase_auth_client.table("workouts") \
             .select("*") \
             .eq("uuid", user_uuid) \
@@ -139,11 +150,8 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
             return False, "Keine abgeschlossenen Sätze gefunden."
 
         sets_to_archive = completed_sets_response.data
-        
-        # BUGFIX: Get the IDs for resetting *before* they are potentially modified.
         set_ids_to_reset = [s['id'] for s in sets_to_archive]
         
-        # 2. Analyze for PRs before archiving
         pr_summary = []
         df_archived = pd.DataFrame(sets_to_archive)
         
@@ -169,15 +177,13 @@ def archive_workout_and_analyze(user_uuid: str, workout_name: str):
 
         analysis_string = " ".join(pr_summary) if pr_summary else "Starke Leistung, alle Sätze abgeschlossen!"
 
-        # 3. Copy sets to history table
-        # BUGFIX: Create a copy of the list to avoid modifying the original data.
         sets_for_history = [s.copy() for s in sets_to_archive]
         for s in sets_for_history:
-            del s['id'] # Remove the original ID for the history table
+            if 'id' in s:
+                del s['id']
         
         supabase_auth_client.table("workouts_history").insert(sets_for_history).execute()
 
-        # 4. Reset the sets in the original workouts table using the saved IDs
         update_payload = {"completed": False, "messagetocoach": "", "rirdone": 0}
         
         supabase_auth_client.table("workouts") \
